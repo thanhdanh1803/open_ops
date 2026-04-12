@@ -11,45 +11,14 @@ logger = logging.getLogger(__name__)
 
 
 class RiskLevel(str, Enum):
-    """Risk level for operations and skills."""
+    """Risk level for operations.
+
+    Used for HITL approval decisions.
+    """
 
     READ = "read"
     WRITE = "write"
     DESTRUCTIVE = "destructive"
-
-
-class SkillResult(BaseModel):
-    """Standard result type for skill operations."""
-
-    success: bool
-    message: str
-    data: dict[str, Any] | None = None
-    error: str | None = None
-
-
-class SkillMetadata(BaseModel):
-    """Metadata for a skill, used for the skill catalog (Tier 1 progressive disclosure).
-
-    This lightweight metadata is always loaded and serves as a semantic search key
-    for the agent to determine which skills to load fully.
-    """
-
-    name: str = Field(description="Unique identifier for the skill")
-    description: str = Field(description="What this skill does (1-2 sentences)")
-    version: str = Field(default="1.0.0", description="Skill version")
-    risk_level: RiskLevel = Field(description="Risk level of operations")
-    tags: list[str] = Field(
-        default_factory=list,
-        description="Tags for categorization (e.g., 'deployment', 'frontend', 'monitoring')",
-    )
-    requires_credentials: list[str] = Field(
-        default_factory=list,
-        description="Credential env vars required (e.g., ['VERCEL_TOKEN'])",
-    )
-    provides_tools: list[str] = Field(
-        default_factory=list,
-        description="Names of tools this skill provides",
-    )
 
 
 class Project(BaseModel):

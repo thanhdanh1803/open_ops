@@ -2,24 +2,63 @@
 
 The main agent that handles user interactions and delegates to specialized
 subagents for complex operations.
+
+Shell Execution Backends
+------------------------
+
+The orchestrator uses LocalShellBackend by default for local development,
+which provides the built-in `execute` tool for running shell commands
+(including platform CLIs like vercel, railway, render).
+
+For production deployments requiring isolated execution, replace
+LocalShellBackend with a sandbox backend:
+
+    Modal Sandbox (https://modal.com):
+        from langchain_modal import ModalSandbox
+        import modal
+
+        app = modal.App.lookup("your-app")
+        modal_sandbox = modal.Sandbox.create(app=app)
+        backend = ModalSandbox(sandbox=modal_sandbox)
+
+    Runloop Sandbox (https://runloop.ai):
+        from langchain_runloop import RunloopSandbox
+        from runloop_api_client import RunloopSDK
+
+        client = RunloopSDK(bearer_token=os.environ["RUNLOOP_API_KEY"])
+        devbox = client.devbox.create()
+        backend = RunloopSandbox(devbox=devbox)
+
+    Daytona Sandbox (https://daytona.io):
+        from daytona import Daytona
+        from langchain_daytona import DaytonaSandbox
+
+        sandbox = Daytona().create()
+        backend = DaytonaSandbox(sandbox=sandbox)
+
+Sandbox backends provide isolated environments with their own filesystem
+and shell execution, ensuring security and reproducibility.
 """
 
+import importlib.resources
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
 from deepagents import create_deep_agent
-from deepagents.backends import FilesystemBackend
+from deepagents.backends import LocalShellBackend
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.store.base import BaseStore
 from langgraph.store.memory import InMemoryStore
 
-from openops.agent.llm import get_model_string
+from openops.agent.llm import create_llm, get_model_string
 from openops.agent.prompts import ORCHESTRATOR_PROMPT
 from openops.agent.subagents import create_all_subagents
 from openops.agent.tools import create_project_knowledge_tools
 from openops.config import OpenOpsConfig
+from openops.credentials.platforms import build_interrupt_config
 from openops.storage.base import ProjectStoreBase
 
 logger = logging.getLogger(__name__)
@@ -67,13 +106,35 @@ def create_orchestrator(
     working_directory = Path(working_directory) if working_directory else Path(".")
 
     if skill_directories is None:
-        skill_directories = [
-            str(Path.home() / ".openops" / "skills"),
-            "./skills/",
-        ]
+        # Get the installed package's skills directory using importlib.resources
+        with importlib.resources.as_file(importlib.resources.files("openops.skills")) as package_skills_dir:
+            skill_directories = [
+                str(package_skills_dir),  # Built-in package skills
+                str(Path.home() / ".openops" / "skills"),  # User custom skills
+                "./skills/",  # Local project skills
+            ]
+        logger.debug(f"Using skill directories: {skill_directories}")
 
     model_string = get_model_string(config)
     logger.debug(f"Using model: {model_string}")
+
+    # Create model instance with proper configuration
+    model = create_llm(config)
+    logger.debug(f"Created model instance: {type(model).__name__}")
+
+    # Set provider-specific env vars for subagents that use init_chat_model
+    api_key = config.get_llm_api_key()
+    if api_key:
+        env_var_map = {
+            "anthropic": "ANTHROPIC_API_KEY",
+            "openai": "OPENAI_API_KEY",
+            "google": "GOOGLE_API_KEY",
+            "deepseek": "DEEPSEEK_API_KEY",
+        }
+        env_var = env_var_map.get(config.model_provider)
+        if env_var:
+            os.environ[env_var] = api_key
+            logger.debug(f"Set {env_var} for subagent initialization")
 
     project_tools = create_project_knowledge_tools(project_store)
     tools = project_tools + (additional_tools or [])
@@ -85,20 +146,23 @@ def create_orchestrator(
     )
     logger.debug(f"Configured {len(subagents)} subagents")
 
-    backend = FilesystemBackend(
+    # LocalShellBackend provides the `execute` tool for running shell commands.
+    # For production with isolated execution, use a sandbox backend instead:
+    # ModalSandbox, RunloopSandbox, or DaytonaSandbox (see module docstring).
+    backend = LocalShellBackend(
         root_dir=str(working_directory),
-        virtual_mode=False,
+        env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
     )
+    logger.debug("Using LocalShellBackend for shell execution support")
 
-    interrupt_config = {
-        "vercel_deploy": True,
-        "railway_deploy": True,
-        "render_deploy": True,
-    }
+    interrupt_config = build_interrupt_config()
+    # Add HITL approval for shell command execution
+    interrupt_config["execute"] = True
+    logger.debug(f"Interrupt config: {interrupt_config}")
 
     agent = create_deep_agent(
         name="openops-orchestrator",
-        model=model_string,
+        model=model,  # Use model instance instead of string
         system_prompt=ORCHESTRATOR_PROMPT,
         tools=tools,
         subagents=subagents,

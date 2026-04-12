@@ -18,6 +18,7 @@ dependencies = [
   "pydantic-settings>=2.13.1",
   "langchain-anthropic>=1.4.0",
   "deepagents>=0.5.2",
+  "langchain-google-genai>=4.2.1",
 ]
 
 [project.optional-dependencies]

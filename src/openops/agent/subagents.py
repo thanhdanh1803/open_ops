@@ -14,6 +14,10 @@ from openops.agent.prompts import (
     MONITOR_AGENT_PROMPT,
     PROJECT_ANALYZER_PROMPT,
 )
+from openops.credentials.platforms import (
+    build_interrupt_config,
+    get_deployment_platform_names,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,10 +78,12 @@ def create_deploy_agent_config(
     """
     logger.debug("Creating deploy agent config")
 
+    platform_names = ", ".join(get_deployment_platform_names())
+
     config: dict[str, Any] = {
         "name": "deploy-agent",
         "description": (
-            "Handles deployments to cloud platforms (Vercel, Railway, Render). "
+            f"Handles deployments to cloud platforms ({platform_names}). "
             "Generates configs, validates settings, and executes deployments."
         ),
         "system_prompt": DEPLOY_AGENT_PROMPT,
@@ -91,11 +97,7 @@ def create_deploy_agent_config(
         config["skills"] = skills
 
     if interrupt_on_deploy:
-        config["interrupt_on"] = {
-            "vercel_deploy": True,
-            "railway_deploy": True,
-            "render_deploy": True,
-        }
+        config["interrupt_on"] = build_interrupt_config()
 
     return config
 

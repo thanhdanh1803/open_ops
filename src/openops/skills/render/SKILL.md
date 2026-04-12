@@ -1,18 +1,14 @@
 ---
 name: render-deploy
-description: Deploy web services, static sites, and workers to Render
-version: 1.0.0
+description: Deploy web services, static sites, and workers to Render using the Render CLI
+version: 2.0.0
 author: OpenOps Team
 risk_level: write
 platforms:
   - render
 requires:
-  credentials:
-    - OPENOPS_RENDER_API_KEY
-  tools:
-    - render_deploy
-    - render_list_services
-    - render_get_deployments
+  cli: render
+  install: npm install -g @render-oss/cli
 ---
 
 # Render Deployment Skill
@@ -28,9 +24,65 @@ Use this skill when:
 
 ## Prerequisites
 
-1. User must have a Render account
-2. OPENOPS_RENDER_API_KEY must be configured
-3. Git repository must be accessible to Render
+### 1. CLI Installation
+
+```bash
+npm install -g @render-oss/cli
+```
+
+Or using Homebrew (macOS):
+```bash
+brew install render
+```
+
+Verify installation:
+```bash
+render --version
+```
+
+### 2. Authentication
+
+Set up an API key for CLI access:
+
+1. Go to https://dashboard.render.com/u/settings#api-keys
+2. Create a new API key
+3. Set it as environment variable:
+
+```bash
+export RENDER_API_KEY=rnd_xxxxxxxxxxxxx
+```
+
+Or configure in CLI:
+```bash
+render config set api-key rnd_xxxxxxxxxxxxx
+```
+
+To verify authentication:
+```bash
+render services list
+```
+
+**Expected output (authenticated):**
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Services                                                                │
+├──────────────────┬────────────────┬──────────┬──────────────────────────┤
+│ Name             │ Type           │ Status   │ URL                      │
+├──────────────────┼────────────────┼──────────┼──────────────────────────┤
+│ my-api           │ Web Service    │ Live     │ https://my-api.onrender  │
+└──────────────────┴────────────────┴──────────┴──────────────────────────┘
+```
+
+**Expected output (not authenticated):**
+```
+Error: No API key configured. Set RENDER_API_KEY or run 'render config set api-key'
+```
+
+If not authenticated:
+1. Inform user that Render requires an API key from the dashboard
+2. Offer to open the API key page: https://dashboard.render.com/u/settings#api-keys
+3. Once user provides the API key, execute: `render config set api-key <key>`
+4. Verify with `render services list`
 
 ## Supported Service Types
 
@@ -55,76 +107,160 @@ Render auto-detects and builds:
 | Go | Go | `go build -o app` | `./app` |
 | Rust | Rust | `cargo build --release` | `./target/release/app` |
 
+## CLI Commands
+
+### List Services
+
+```bash
+render services list
+```
+
+**Expected output:**
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Services                                                                │
+├──────────────────┬────────────────┬──────────┬──────────────────────────┤
+│ Name             │ Type           │ Status   │ URL                      │
+├──────────────────┼────────────────┼──────────┼──────────────────────────┤
+│ my-api           │ Web Service    │ Live     │ https://my-api.onrender  │
+│ my-worker        │ Background     │ Live     │ -                        │
+│ my-site          │ Static Site    │ Live     │ https://my-site.onrender │
+└──────────────────┴────────────────┴──────────┴──────────────────────────┘
+```
+
+### Get Service Details
+
+```bash
+render services show --name <service-name>
+```
+
+Or by ID:
+```bash
+render services show --id srv-xxxxxxxxxxxxx
+```
+
+### Trigger Deploy
+
+For an existing service, trigger a new deployment:
+
+```bash
+render deploys create --service-id srv-xxxxxxxxxxxxx
+```
+
+Or by service name:
+```bash
+render deploys create --service-name my-api
+```
+
+**Expected output:**
+```
+Deployment triggered successfully.
+Deployment ID: dep-xxxxxxxxxxxxx
+Status: build_in_progress
+```
+
+### List Deployments
+
+```bash
+render deploys list --service-id srv-xxxxxxxxxxxxx
+```
+
+**Expected output:**
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Deployments for my-api                                                  │
+├──────────────────┬────────────────┬──────────────────────────────────────┤
+│ ID               │ Status         │ Created                              │
+├──────────────────┼────────────────┼──────────────────────────────────────┤
+│ dep-abc123       │ live           │ 2024-01-15 10:30:00                  │
+│ dep-xyz789       │ deactivated    │ 2024-01-14 09:15:00                  │
+└──────────────────┴────────────────┴──────────────────────────────────────┘
+```
+
+### View Logs
+
+```bash
+render logs --service-id srv-xxxxxxxxxxxxx
+```
+
+With follow:
+```bash
+render logs --service-id srv-xxxxxxxxxxxxx --tail
+```
+
+### Set Environment Variables
+
+```bash
+render env set --service-id srv-xxxxxxxxxxxxx KEY=value
+```
+
+### List Environment Variables
+
+```bash
+render env list --service-id srv-xxxxxxxxxxxxx
+```
+
+### Create Service via Blueprint
+
+Using a `render.yaml` file:
+
+```bash
+render blueprint launch
+```
+
+This creates all services defined in `render.yaml`.
+
 ## Deployment Steps
 
-### 1. Analyze Project
+### 0. Check CLI Installation
 
-Check for:
-- `package.json` (Node.js)
-- `requirements.txt` / `pyproject.toml` (Python)
-- `go.mod` (Go)
-- `Cargo.toml` (Rust)
-- `render.yaml` (Blueprint spec)
+```bash
+render --version
+```
 
-### 2. Determine Service Type
+If CLI not installed:
+1. Ask user for permission to install
+2. Execute: `npm install -g @render-oss/cli` (or `brew install render` on macOS)
+3. Verify installation with `render --version`
 
-Based on project analysis:
-- Has HTTP server → `web_service`
-- Has `build` output, no server → `static_site`
-- Has worker/queue processing → `background_worker`
-- Internal API only → `private_service`
+### 1. Check Authentication
 
-### 3. Deploy Service
+```bash
+render services list
+```
 
-Use `render_deploy` with:
-- `service_name`: Name for the service
-- `service_type`: One of the supported types
-- `git_repo`: GitHub repository URL
-- `branch`: Branch to deploy (default: main)
-- `environment_variables`: Required env vars
-- `build_command`: Custom build command
-- `start_command`: Custom start command
+If error about API key:
+1. Inform user that Render requires an API key from the dashboard
+2. Open or direct to: https://dashboard.render.com/u/settings#api-keys
+3. Once user provides the API key, execute: `render config set api-key <key>`
+4. Verify with `render services list`
+
+### 2. List Existing Services
+
+```bash
+render services list
+```
+
+### 3. Deploy
+
+For existing service:
+```bash
+render deploys create --service-name <name>
+```
+
+For new service, guide user to:
+1. Create `render.yaml` blueprint
+2. Run `render blueprint launch`
+
+Or create via dashboard and then trigger deploy via CLI.
 
 ### 4. Verify Deployment
 
-Use `render_get_deployments` to check:
-- Deployment status (live, build_in_progress, failed)
-- Build logs if failed
-- Deployment URL
+```bash
+render deploys list --service-name <name>
+```
 
-## Available Tools
-
-### render_deploy
-
-Create and deploy a new service to Render.
-
-**Parameters:**
-- `service_name` (required): Name for the Render service
-- `service_type` (required): Type (web_service, static_site, background_worker, private_service)
-- `git_repo` (required): Git repository URL
-- `branch`: Git branch (default: main)
-- `environment_variables`: Dict of environment variables
-- `build_command`: Custom build command
-- `start_command`: Custom start command
-- `health_check_path`: Health check endpoint path
-- `instance_type`: Instance type (free, starter, standard, pro, etc.)
-- `auto_deploy`: Enable auto-deploy on push (default: true)
-
-### render_list_services
-
-List all services in the user's Render account.
-
-**Parameters:**
-- `service_type`: Filter by type
-- `limit`: Maximum services to return (default: 20)
-
-### render_get_deployments
-
-Get deployment history for a service.
-
-**Parameters:**
-- `service_id` (required): Render service ID
-- `limit`: Number of deployments (default: 10)
+Check latest deployment status is `live`.
 
 ## Instance Types and Pricing
 
@@ -143,26 +279,36 @@ Free tier limitations:
 
 ## Error Handling
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `MISSING_CREDENTIALS` | No API key | Configure OPENOPS_RENDER_API_KEY |
-| `INVALID_SERVICE_TYPE` | Wrong type value | Use valid service type |
-| `repo not accessible` | Git permission issue | Connect GitHub to Render |
-| `build failed` | Build error | Check build logs |
-| `out of memory` | App exceeds plan limits | Upgrade instance type |
+| Error Output | Cause | Action |
+|--------------|-------|--------|
+| `No API key configured` | Not authenticated | Guide user to create API key, then execute `render config set api-key <key>` |
+| `Service not found` | Wrong name/ID | Execute `render services list` to find correct service |
+| `Deployment failed` | Build error | Execute `render logs` to diagnose, then fix |
+| `Rate limited` | Too many requests | Wait briefly, then retry |
+| `command not found: render` | CLI not installed | Ask permission, then install CLI |
 
-## Environment Variables
+## Output Parsing
 
-Render environment variables:
-- Set per-service or in environment groups
-- Can be marked as secret (hidden in dashboard)
-- Available at build and runtime
+### Service List
 
-Common auto-injected variables:
-- `PORT`: Port to bind (always use this)
-- `RENDER`: Set to `true` on Render
-- `RENDER_SERVICE_ID`: Service ID
-- `RENDER_EXTERNAL_URL`: Public URL
+Parse table output for:
+- Service name (first column)
+- Service type (second column)
+- Status: `Live`, `Deploying`, `Failed`
+
+### Deployment Status
+
+Look for:
+- `Status: live` - deployment successful
+- `Status: build_in_progress` - still building
+- `Status: failed` - deployment failed
+
+### Logs
+
+Check for:
+- `Error:` or `error:` lines
+- Stack traces
+- Exit codes
 
 ## render.yaml Blueprint
 
@@ -190,7 +336,7 @@ databases:
 
 Render performs health checks on web services:
 - Default path: `/`
-- Custom path: Set `health_check_path`
+- Custom path: Set in dashboard or render.yaml
 - Timeout: 30 seconds
 - Unhealthy threshold: 3 consecutive failures
 
@@ -203,29 +349,44 @@ def health():
 
 ## Example Conversations
 
-**Deploy web service:**
+**Deploy web service (CLI not installed):**
 ```
 User: "Deploy my Express API to Render"
-Agent: "I'll create a web service from your repository. What's your GitHub repo URL?"
-User: "https://github.com/user/my-api"
-Agent: "Creating web service 'my-api' on Render's free tier..."
-Agent: "Deployed! Your API will be live at https://my-api.onrender.com once build completes."
+Agent: [executes: render --version]
+Agent: "Render CLI is not installed. May I install it for you?"
+User: "Yes"
+Agent: [executes: npm install -g @render-oss/cli]
+Agent: "CLI installed. Checking authentication..."
+Agent: [executes: render services list]
+Agent: "Render requires an API key. Please create one at:
+https://dashboard.render.com/u/settings#api-keys
+Then share the key with me."
+User: "Here it is: rnd_xxxxxxxxxxxxx"
+Agent: [executes: render config set api-key rnd_xxxxxxxxxxxxx]
+Agent: "API key configured. Checking services..."
+Agent: [executes: render services list]
+Agent: "Found existing service 'my-api'. Triggering deployment..."
+Agent: [executes: render deploys create --service-name my-api]
+Agent: "Deployment triggered! Your API will be live at https://my-api.onrender.com"
 ```
 
-**Deploy static site:**
+**Deploy web service (already set up):**
 ```
-User: "Deploy my React app to Render"
-Agent: "I'll deploy this as a static site. Using the 'build' directory for output."
-Agent: "Static site 'my-app' deployed to https://my-app.onrender.com"
+User: "Deploy my Express API to Render"
+Agent: [executes: render services list]
+Agent: "Found existing service 'my-api'. Triggering deployment..."
+Agent: [executes: render deploys create --service-name my-api]
+Agent: "Deployment triggered! Checking status..."
+Agent: [executes: render deploys list --service-name my-api]
+Agent: "Build in progress. Your API will be live at https://my-api.onrender.com once complete."
 ```
 
 **Check deployment status:**
 ```
 User: "What's the status of my Render deployment?"
-Agent: "Checking recent deployments..."
+Agent: [executes: render deploys list --service-name my-api]
 Agent: "Latest deployment:
 - Status: live
-- Commit: abc1234 ('Add user auth')
 - Deployed: 5 minutes ago"
 ```
 
@@ -234,6 +395,6 @@ Agent: "Latest deployment:
 1. **Use health checks** for automatic recovery
 2. **Set start command explicitly** for reliable builds
 3. **Use environment groups** for shared config
-4. **Enable auto-deploy** for CI/CD workflow
+4. **Enable auto-deploy** for CI/CD workflow (configure in dashboard)
 5. **Upgrade from free tier** for production (no spin-down)
 6. **Use render.yaml** for reproducible infrastructure
