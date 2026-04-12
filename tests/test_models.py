@@ -8,8 +8,6 @@ from openops.models import (
     Project,
     RiskLevel,
     Service,
-    SkillMetadata,
-    SkillResult,
 )
 
 
@@ -23,69 +21,6 @@ class TestRiskLevel:
         assert RiskLevel("read") == RiskLevel.READ
         assert RiskLevel("write") == RiskLevel.WRITE
         assert RiskLevel("destructive") == RiskLevel.DESTRUCTIVE
-
-
-class TestSkillResult:
-    def test_success_result(self):
-        result = SkillResult(
-            success=True,
-            message="Deployment successful",
-            data={"url": "https://example.com"},
-        )
-        assert result.success is True
-        assert result.message == "Deployment successful"
-        assert result.data == {"url": "https://example.com"}
-        assert result.error is None
-
-    def test_failure_result(self):
-        result = SkillResult(
-            success=False,
-            message="Deployment failed",
-            error="INVALID_TOKEN",
-        )
-        assert result.success is False
-        assert result.error == "INVALID_TOKEN"
-        assert result.data is None
-
-
-class TestSkillMetadata:
-    def test_skill_metadata_creation(self):
-        metadata = SkillMetadata(
-            name="vercel-deploy",
-            description="Deploy applications to Vercel",
-            version="1.0.0",
-            risk_level=RiskLevel.WRITE,
-            tags=["deployment", "frontend", "vercel"],
-            requires_credentials=["VERCEL_TOKEN"],
-            provides_tools=["vercel_deploy", "vercel_list_projects"],
-        )
-        assert metadata.name == "vercel-deploy"
-        assert metadata.risk_level == RiskLevel.WRITE
-        assert "deployment" in metadata.tags
-        assert "VERCEL_TOKEN" in metadata.requires_credentials
-        assert len(metadata.provides_tools) == 2
-
-    def test_skill_metadata_defaults(self):
-        metadata = SkillMetadata(
-            name="simple-skill",
-            description="A simple skill",
-            risk_level=RiskLevel.READ,
-        )
-        assert metadata.version == "1.0.0"
-        assert metadata.tags == []
-        assert metadata.requires_credentials == []
-        assert metadata.provides_tools == []
-
-    def test_skill_metadata_json_serialization(self):
-        metadata = SkillMetadata(
-            name="test-skill",
-            description="Test skill",
-            risk_level=RiskLevel.WRITE,
-            tags=["test"],
-        )
-        json_data = metadata.model_dump_json()
-        assert "test-skill" in json_data
-        assert "write" in json_data
 
 
 class TestProject:

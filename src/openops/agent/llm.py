@@ -64,11 +64,13 @@ def create_llm(config: OpenOpsConfig) -> BaseChatModel:
             max_tokens=config.model_max_tokens,
         )
     elif provider == "openai":
+        # Use chat completions API (more widely compatible)
         return ChatOpenAI(
             model=model_name,
             api_key=api_key,
             temperature=config.model_temperature,
             max_tokens=config.model_max_tokens,
+            use_responses_api=False,
         )
     elif provider == "google":
         return ChatGoogleGenerativeAI(

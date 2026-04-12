@@ -33,7 +33,7 @@ class SqliteProjectStore(ProjectStoreBase):
     def connection(self) -> sqlite3.Connection:
         """Get or create the database connection."""
         if self._connection is None:
-            self._connection = sqlite3.connect(self.db_path)
+            self._connection = sqlite3.connect(self.db_path, check_same_thread=False)
             self._connection.row_factory = sqlite3.Row
             self._connection.execute("PRAGMA foreign_keys = ON")
         return self._connection
@@ -141,9 +141,7 @@ class SqliteProjectStore(ProjectStoreBase):
 
     def get_project(self, path: str) -> Project | None:
         """Get a project by its path."""
-        row = self.connection.execute(
-            "SELECT * FROM projects WHERE path = ?", (path,)
-        ).fetchone()
+        row = self.connection.execute("SELECT * FROM projects WHERE path = ?", (path,)).fetchone()
 
         if not row:
             return None
@@ -152,9 +150,7 @@ class SqliteProjectStore(ProjectStoreBase):
 
     def get_project_by_id(self, project_id: str) -> Project | None:
         """Get a project by its ID."""
-        row = self.connection.execute(
-            "SELECT * FROM projects WHERE id = ?", (project_id,)
-        ).fetchone()
+        row = self.connection.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
 
         if not row:
             return None
@@ -163,17 +159,13 @@ class SqliteProjectStore(ProjectStoreBase):
 
     def list_projects(self) -> list[Project]:
         """List all known projects."""
-        rows = self.connection.execute(
-            "SELECT * FROM projects ORDER BY updated_at DESC"
-        ).fetchall()
+        rows = self.connection.execute("SELECT * FROM projects ORDER BY updated_at DESC").fetchall()
 
         return [self._row_to_project(row) for row in rows]
 
     def delete_project(self, project_id: str) -> bool:
         """Delete a project and all associated data."""
-        cursor = self.connection.execute(
-            "DELETE FROM projects WHERE id = ?", (project_id,)
-        )
+        cursor = self.connection.execute("DELETE FROM projects WHERE id = ?", (project_id,))
         self.connection.commit()
         deleted = cursor.rowcount > 0
         if deleted:
@@ -233,13 +225,9 @@ class SqliteProjectStore(ProjectStoreBase):
         self.connection.commit()
         logger.debug(f"Upserted service: {service.id} ({service.name})")
 
-    def _sync_service_dependencies(
-        self, service_id: str, dependencies: list[str]
-    ) -> None:
+    def _sync_service_dependencies(self, service_id: str, dependencies: list[str]) -> None:
         """Synchronize the service_dependencies table with the dependencies list."""
-        self.connection.execute(
-            "DELETE FROM service_dependencies WHERE service_id = ?", (service_id,)
-        )
+        self.connection.execute("DELETE FROM service_dependencies WHERE service_id = ?", (service_id,))
 
         for depends_on_id in dependencies:
             self.connection.execute(
@@ -252,9 +240,7 @@ class SqliteProjectStore(ProjectStoreBase):
 
     def get_service(self, service_id: str) -> Service | None:
         """Get a service by its ID."""
-        row = self.connection.execute(
-            "SELECT * FROM services WHERE id = ?", (service_id,)
-        ).fetchone()
+        row = self.connection.execute("SELECT * FROM services WHERE id = ?", (service_id,)).fetchone()
 
         if not row:
             return None
@@ -272,9 +258,7 @@ class SqliteProjectStore(ProjectStoreBase):
 
     def delete_service(self, service_id: str) -> bool:
         """Delete a service."""
-        cursor = self.connection.execute(
-            "DELETE FROM services WHERE id = ?", (service_id,)
-        )
+        cursor = self.connection.execute("DELETE FROM services WHERE id = ?", (service_id,))
         self.connection.commit()
         deleted = cursor.rowcount > 0
         if deleted:
@@ -337,9 +321,7 @@ class SqliteProjectStore(ProjectStoreBase):
             ),
         )
         self.connection.commit()
-        logger.debug(
-            f"Added deployment: {deployment.id} for service {deployment.service_id}"
-        )
+        logger.debug(f"Added deployment: {deployment.id} for service {deployment.service_id}")
 
     def get_active_deployment(self, service_id: str) -> Deployment | None:
         """Get the active deployment for a service."""

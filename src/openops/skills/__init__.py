@@ -1,15 +1,17 @@
-"""Skills module - modular capabilities for deployment platforms."""
+"""OpenOps Skills Package.
 
-from openops.skills.base import BaseSkill, SkillMetadata, SkillResult
-from openops.skills.railway.skill import RailwaySkill
-from openops.skills.render.skill import RenderSkill
-from openops.skills.vercel.skill import VercelSkill
+This package contains SKILL.md files that provide instructions for deploying
+to various platforms using their CLI tools. The agent reads these files
+and uses the built-in `execute` tool to run CLI commands.
 
-__all__ = [
-    "BaseSkill",
-    "SkillMetadata",
-    "SkillResult",
-    "VercelSkill",
-    "RailwaySkill",
-    "RenderSkill",
-]
+Supported platforms:
+- Vercel (vercel/)
+- Railway (railway/)
+- Render (render/)
+
+Each platform directory contains a SKILL.md with:
+- CLI installation instructions
+- Authentication flow
+- Available commands
+- Expected output formats
+"""

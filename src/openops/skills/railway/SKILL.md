@@ -1,18 +1,14 @@
 ---
-name: railway-deploy
-description: Deploy backend services and databases to Railway
-version: 1.0.0
+name: railway
+description: Deploy backend services and databases to Railway using the Railway CLI
+version: 2.1.0
 author: OpenOps Team
 risk_level: write
 platforms:
   - railway
 requires:
-  credentials:
-    - OPENOPS_RAILWAY_TOKEN
-  tools:
-    - railway_deploy
-    - railway_list_projects
-    - railway_list_services
+  cli: railway
+  install: npm install -g @railway/cli
 ---
 
 # Railway Deployment Skill
@@ -26,11 +22,55 @@ Use this skill when:
 - User mentions Railway as the target platform
 - User needs infrastructure with persistent storage
 
+When an **agent** deploys: follow **list → user choice → non-interactive `railway link` → `railway up`** (see **Agent workflow** below); do not depend on interactive CLI menus in subprocesses.
+
 ## Prerequisites
 
-1. User must have a Railway account
-2. OPENOPS_RAILWAY_TOKEN must be configured
-3. For Git deployments: GitHub account connected to Railway
+### 1. CLI Installation
+
+```bash
+npm install -g @railway/cli
+```
+
+Or using Homebrew (macOS):
+```bash
+brew install railway
+```
+
+Verify installation:
+```bash
+railway --version
+```
+
+### 2. Authentication
+
+The user must be logged in to Railway CLI:
+
+```bash
+railway login
+```
+
+This opens a browser for authentication.
+
+To check auth status:
+```bash
+railway whoami
+```
+
+**Expected output (authenticated):**
+```
+Logged in as user@example.com (User ID: xxx)
+```
+
+**Expected output (not authenticated):**
+```
+Not logged in
+```
+
+If not authenticated:
+1. Ask user for permission to authenticate
+2. Execute `railway login` (this opens a browser for authentication)
+3. Wait for authentication to complete, then verify with `railway whoami`
 
 ## Supported Frameworks
 
@@ -64,78 +104,261 @@ Each project has environments (production, staging, etc.) with isolated:
 - Environment variables
 - Databases
 
+## CLI Commands
+
+### Agent workflow (preferred): list → user chooses → non-interactive link and deploy
+
+**Do not rely on interactive `railway link` or menu-driven deploy** when acting as an agent. Those prompts often break without a real TTY (e.g. “Available options can not be empty”). For deploy, use this flow:
+
+1. **List projects (JSON)** — run from the directory you will deploy (or after `cd` into the service root):
+   ```bash
+   railway list --json
+   ```
+   Each entry includes **`workspace`** (id, name), **`id`** / **`name`** for the project, **`environments`**, and **`services`**. Use this to build a clear list for the user.
+
+2. **Workspaces only** — if you need workspace ids/names separately:
+   ```bash
+   railway whoami --json
+   ```
+   The **`workspaces`** array lists **`id`** and **`name`** for each workspace.
+
+3. **Ask the user to choose** — present **project** (name + id). If multiple **environments** or **services** apply, ask which **environment** (and **service** if needed) before running commands.
+
+4. **Link without prompts** (creates/updates `.railway` in the current directory):
+   ```bash
+   railway link --workspace <workspace_id> --project <project_id_or_name> --environment <environment_name_or_id> [--service <service_name_or_id>] --json
+   ```
+   Omit **`--workspace`** when the account has a single workspace or the default is correct.
+
+5. **Deploy** (after link):
+   ```bash
+   railway up
+   ```
+   Non-blocking logs:
+   ```bash
+   railway up --detach
+   ```
+   If your CLI supports deploying without a prior link in that directory, you may use:
+   ```bash
+   railway up --project <project_id> --environment <environment_name_or_id> [--service <service_name_or_id>]
+   ```
+   (When using **`--project`**, **`--environment`** is required per Railway docs.)
+
+6. **Automation / CI** — prefer **`RAILWAY_TOKEN`** (project token) or **`RAILWAY_API_TOKEN`** per Railway docs; still use explicit **project**, **environment**, and **service** flags where applicable—do not depend on interactive menus.
+
+### Link to Project
+
+**Preferred:** non-interactive link (see **Agent workflow** above).
+
+Interactive fallback (human in a real terminal only):
+
+```bash
+cd /path/to/project
+railway link
+```
+
+Or create new project directly:
+```bash
+railway init
+```
+
+### List Projects
+
+**For agents, always use JSON:**
+```bash
+railway list --json
+```
+
+Human-readable table (optional):
+```bash
+railway list
+```
+
+**Expected output (table):**
+```
+┌──────────────────────────────────┬─────────────────────────────────┐
+│ Project                          │ ID                              │
+├──────────────────────────────────┼─────────────────────────────────┤
+│ my-app-prod                      │ abc123-def456-...               │
+│ my-app-staging                   │ xyz789-uvw012-...               │
+└──────────────────────────────────┴─────────────────────────────────┘
+```
+
+### Deploy Service
+
+Deploy the current directory:
+
+```bash
+cd /path/to/project
+railway up
+```
+
+**Expected output:**
+```
+☁️ Deploying from /path/to/project
+☁️ Build logs available at https://railway.app/project/xxx/deployments/yyy
+
+======= Build Succeeded =======
+
+☁️ Deployment successful 🎉
+```
+
+With detached mode (don't stream logs):
+```bash
+railway up --detach
+```
+
+### Check Deployment Status
+
+```bash
+railway status
+```
+
+**Expected output:**
+```
+Project: my-app-prod (abc123)
+Service: api
+Environment: production
+
+Latest Deployment:
+  Status: SUCCESS
+  URL: https://api-production.up.railway.app
+  Deployed: 5 minutes ago
+```
+
+### View Logs
+
+```bash
+railway logs
+```
+
+With follow:
+```bash
+railway logs --follow
+```
+
+### Set Environment Variables
+
+```bash
+railway variables set KEY=value
+```
+
+Or multiple:
+```bash
+railway variables set KEY1=value1 KEY2=value2
+```
+
+### List Environment Variables
+
+```bash
+railway variables
+```
+
+**Expected output:**
+```
+DATABASE_URL=postgresql://...
+REDIS_URL=redis://...
+PORT=3000
+```
+
+### Add Database
+
+```bash
+railway add
+```
+
+**Expected output:**
+```
+? What would you like to add?
+  Empty Service
+> PostgreSQL
+  MySQL
+  MongoDB
+  Redis
+```
+
+### Open Dashboard
+
+```bash
+railway open
+```
+
+Opens the project in browser.
+
+### Run Commands in Railway Environment
+
+```bash
+railway run <command>
+```
+
+Example - run migrations:
+```bash
+railway run python manage.py migrate
+```
+
 ## Deployment Steps
 
-### 1. Identify or Create Project
+### 0. Check CLI Installation
 
-First, check existing projects:
+```bash
+railway --version
 ```
-Use railway_list_projects to see available projects
+
+If CLI not installed:
+1. Ask user for permission to install
+2. Execute: `npm install -g @railway/cli` (or `brew install railway` on macOS)
+3. Verify installation with `railway --version`
+
+### 1. Check Authentication
+
+```bash
+railway whoami
 ```
 
-If no suitable project exists, user needs to create one via Railway dashboard or CLI.
+If not authenticated:
+1. Ask user for permission to authenticate
+2. Execute `railway login` (opens browser)
+3. Verify with `railway whoami` after completion
 
-### 2. Analyze Service Requirements
+### 2. List projects and get user selection
 
-Check for:
-- `requirements.txt` or `pyproject.toml` (Python)
-- `package.json` (Node.js)
-- `go.mod` (Go)
-- `Cargo.toml` (Rust)
-- Database dependencies in code
+```bash
+railway list --json
+```
 
-### 3. Deploy Service
+Present projects (and environments/services from the JSON). **Ask the user which project** (and environment/service if needed) to use.
 
-Use `railway_deploy` with:
-- `project_id`: Target Railway project
-- `service_name`: Name for the service
-- `git_repo`: GitHub repository URL
-- `environment_variables`: Required env vars
-- `start_command`: Custom start command if needed
+### 3. Link non-interactively
 
-### 4. Configure Networking
+From the directory to deploy:
 
-Railway automatically:
-- Assigns internal hostname: `service-name.railway.internal`
-- Generates public domain on request
-- Handles TLS certificates
+```bash
+railway link --workspace <workspace_id> --project <project_id_or_name> --environment <environment_name_or_id> [--service <service_name_or_id>] --json
+```
 
-### 5. Verify Deployment
+Avoid interactive **`railway link`** unless the user is at a real terminal and chooses that path.
 
-Use `railway_list_services` to check:
-- Deployment status (SUCCESS, BUILDING, FAILED)
-- Service URL
-- Recent logs
+### 4. Deploy
 
-## Available Tools
+```bash
+railway up
+```
 
-### railway_deploy
+Use **`railway up --detach`** for non-blocking deploy. You may use **`railway up --project … --environment …`** without a prior **`railway link`** if the CLI version supports it and the situation calls for it.
 
-Deploy a service to an existing Railway project.
+### Alternative: new project (user wants create, not link)
 
-**Parameters:**
-- `project_id` (required): Railway project ID
-- `service_name` (required): Name for the service
-- `git_repo`: GitHub repository URL
-- `environment_variables`: Dict of environment variables
-- `start_command`: Custom start command
-- `build_command`: Custom build command
-- `root_directory`: Root directory for monorepos
+```bash
+railway init
+```
 
-### railway_list_projects
+Then run **`railway up`** (or **`railway up --detach`**) as in step 4.
 
-List all projects in the user's Railway account.
+### 5. Verify
 
-**Returns:** List of projects with IDs, names, and service counts.
-
-### railway_list_services
-
-List services in a specific project with their deployment status.
-
-**Parameters:**
-- `project_id` (required): Railway project ID
-
-**Returns:** List of services with status, URLs, and deployment info.
+```bash
+railway status
+```
 
 ## Database Deployment
 
@@ -155,20 +378,34 @@ Database connection strings are automatically injected as environment variables:
 
 ## Error Handling
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `MISSING_CREDENTIALS` | No Railway token | Configure OPENOPS_RAILWAY_TOKEN |
-| `project not found` | Invalid project ID | Use railway_list_projects to find correct ID |
-| `build failed` | Build error | Check build logs, verify dependencies |
-| `port not detected` | App doesn't expose port | Set PORT env var or configure in railway.json |
+| Error Output | Cause | Action |
+|--------------|-------|--------|
+| `Not logged in` | Not authenticated | Ask permission, then execute `railway login` |
+| `No project linked` | Not linked to project | Run **`railway list --json`**, ask user to choose project/env/service, then **`railway link --project … --environment … [--workspace …] [--service …] --json`** (avoid interactive `railway link` in agent runs) |
+| `Build failed` | Build error | Execute `railway logs` to diagnose, then fix |
+| `Project not found` | Invalid project | Run **`railway list --json`** and reconcile ids/names with the user |
+| `command not found: railway` | CLI not installed | Ask permission, then install CLI |
 
-## Environment Variables
+## Output Parsing
 
-Railway environment variables:
-- Are encrypted at rest
-- Automatically injected at runtime
-- Can reference other variables: `${DATABASE_URL}`
-- Support Railway-provided variables: `${{RAILWAY_STATIC_URL}}`
+### Deployment Success
+
+Look for:
+- `☁️ Deployment successful` or `Deployment successful 🎉`
+- `======= Build Succeeded =======`
+
+### Deployment Failure
+
+Look for:
+- `======= Build Failed =======`
+- `Error:` prefix
+- Exit code non-zero
+
+### Status Check
+
+Parse `railway status` output for:
+- `Status: SUCCESS` or `Status: FAILED`
+- `URL:` line for public URL
 
 ## Railway-Specific Configuration
 
@@ -202,29 +439,57 @@ worker: python worker.py
 
 ## Example Conversations
 
-**Deploy backend API:**
+**Deploy backend API (CLI not installed):**
 ```
 User: "Deploy my FastAPI backend to Railway"
-Agent: "Let me check your Railway projects..."
-Agent: "Found project 'my-app-prod'. I'll create a service called 'api'. Proceed?"
+Agent: [executes: railway --version]
+Agent: "Railway CLI is not installed. May I install it for you?"
 User: "Yes"
-Agent: "Deployed! Service 'api' is building. URL will be available shortly."
+Agent: [executes: npm install -g @railway/cli]
+Agent: "CLI installed. Checking authentication..."
+Agent: [executes: railway whoami]
+Agent: "Not authenticated. May I run `railway login`? This will open a browser window."
+User: "Go ahead"
+Agent: [executes: railway login]
+Agent: "Please complete authentication in the browser..."
+Agent: [executes: railway whoami]
+Agent: "Authenticated as user@example.com. Listing your Railway projects..."
+Agent: [executes: railway list --json]
+Agent: "Here are your projects: (1) my-app-prod — id … (2) my-app-staging — id …. Which should I deploy to?"
+User: "my-app-prod, production"
+Agent: [executes: railway link --project my-app-prod --environment production --json]
+Agent: [executes: railway up]
+Agent: "Deployed! Service is building at https://railway.app/project/xxx"
+```
+
+**Deploy backend API (already set up):**
+```
+User: "Deploy my FastAPI backend to Railway"
+Agent: [executes: railway whoami]
+Agent: "You're logged in. Fetching projects..."
+Agent: [executes: railway list --json]
+Agent: "Projects: my-app-prod, my-app-staging. Which project and environment?"
+User: "my-app-prod, production"
+Agent: [executes: railway link --project my-app-prod --environment production --json]
+Agent: [executes: railway up --detach]
+Agent: "Deployed! Service is building. URL: https://api-production.up.railway.app"
 ```
 
 **Check deployment status:**
 ```
-User: "What's the status of my Railway services?"
-Agent: "Checking services in project..."
-Agent: "Found 3 services:
-- api: SUCCESS (https://api-production.up.railway.app)
-- worker: SUCCESS (no public URL - internal service)
-- postgres: SUCCESS (internal)"
+User: "What's the status of my Railway deployment?"
+Agent: [executes: railway status]
+Agent: "Your service is running:
+- Status: SUCCESS
+- URL: https://api-production.up.railway.app
+- Deployed: 5 minutes ago"
 ```
 
 ## Best Practices
 
-1. **Use environment variables** for configuration, never hardcode secrets
-2. **Health checks** - implement `/health` endpoint for automatic restart
-3. **Graceful shutdown** - handle SIGTERM for zero-downtime deploys
-4. **Monorepos** - use `root_directory` to specify service location
-5. **Databases** - use Railway's managed databases for simplicity
+1. **Deploy flow** — **`railway list --json`** → user picks project (and env/service) → **`railway link … --json`** → **`railway up`**; avoid interactive CLI wizards in agent subprocesses
+2. **Use environment variables** for configuration, never hardcode secrets
+3. **Health checks** - implement `/health` endpoint for automatic restart
+4. **Graceful shutdown** - handle SIGTERM for zero-downtime deploys
+5. **Use `railway up --detach`** for non-blocking deployments
+6. **Databases** - use Railway's managed databases for simplicity

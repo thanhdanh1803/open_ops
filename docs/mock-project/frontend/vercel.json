@@ -1,0 +1,10 @@
+{
+  "framework": "nextjs",
+  "outputDirectory": ".next",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://extraordinary-consideration-production.up.railway.app/:path*"
+    }
+  ]
+}

@@ -4,10 +4,21 @@ import logging
 from pathlib import Path
 from typing import Literal
 
+from dotenv import load_dotenv
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
+
+# Global OpenOps configuration directory and env file
+OPENOPS_DIR = Path.home() / ".openops"
+OPENOPS_ENV_FILE = OPENOPS_DIR / ".env"
+
+# Load environment variables from the OpenOps env file into os.environ
+# This ensures LLM client libraries (OpenAI, Anthropic, etc.) can find API keys
+if OPENOPS_ENV_FILE.exists():
+    load_dotenv(OPENOPS_ENV_FILE)
+    logger.debug(f"Loaded environment from {OPENOPS_ENV_FILE}")
 
 
 class OpenOpsConfig(BaseSettings):
@@ -15,22 +26,24 @@ class OpenOpsConfig(BaseSettings):
 
     All settings can be overridden via environment variables with the
     OPENOPS_ prefix (e.g., OPENOPS_MODEL_PROVIDER, OPENOPS_DATA_DIR).
+
+    Configuration is loaded from ~/.openops/.env (created by 'openops init').
     """
 
     model_config = SettingsConfigDict(
         env_prefix="OPENOPS_",
-        env_file=".env",
+        env_file=OPENOPS_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
     # Model configuration
-    model_provider: Literal["anthropic", "openai", "google"] = Field(
+    model_provider: Literal["anthropic", "openai", "google", "deepseek"] = Field(
         default="anthropic",
         description="LLM provider to use",
     )
     model_name: str = Field(
-        default="claude-sonnet-4-5",
+        default="claude-sonnet-4-6",
         description="Model name for the selected provider",
     )
     model_temperature: float = Field(
@@ -81,7 +94,11 @@ class OpenOpsConfig(BaseSettings):
         validation_alias="GOOGLE_API_KEY",
         description="Google API key",
     )
-
+    deepseek_api_key: str | None = Field(
+        default=None,
+        validation_alias="DEEPSEEK_API_KEY",
+        description="DeepSeek API key",
+    )
     # Behavior defaults
     default_platform: str = Field(
         default="vercel",
@@ -134,6 +151,7 @@ class OpenOpsConfig(BaseSettings):
             "anthropic": self.anthropic_api_key,
             "openai": self.openai_api_key,
             "google": self.google_api_key,
+            "deepseek": self.deepseek_api_key,
         }
         return key_map.get(self.model_provider)
 
@@ -153,4 +171,4 @@ def get_config() -> OpenOpsConfig:
     return OpenOpsConfig()
 
 
-__all__ = ["OpenOpsConfig", "get_config"]
+__all__ = ["OpenOpsConfig", "OPENOPS_DIR", "OPENOPS_ENV_FILE", "get_config"]

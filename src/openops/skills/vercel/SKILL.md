@@ -1,18 +1,14 @@
 ---
-name: vercel-deploy
-description: Deploy frontend applications to Vercel
-version: 1.0.0
+name: vercel
+description: Deploy frontend applications to Vercel using the Vercel CLI
+version: 2.0.0
 author: OpenOps Team
 risk_level: write
 platforms:
   - vercel
 requires:
-  credentials:
-    - OPENOPS_VERCEL_TOKEN
-  tools:
-    - vercel_deploy
-    - vercel_list_projects
-    - vercel_get_deployments
+  cli: vercel
+  install: npm install -g vercel
 ---
 
 # Vercel Deployment Skill
@@ -27,9 +23,46 @@ Use this skill when:
 
 ## Prerequisites
 
-1. User must have a Vercel account
-2. OPENOPS_VERCEL_TOKEN must be configured
-3. For Git deployments: repository must be accessible to Vercel
+### 1. CLI Installation
+
+```bash
+npm install -g vercel
+```
+
+Verify installation:
+```bash
+vercel --version
+```
+
+### 2. Authentication
+
+The user must be logged in to Vercel CLI:
+
+```bash
+vercel login
+```
+
+This opens a browser for authentication. After login, credentials are stored locally.
+
+To check auth status:
+```bash
+vercel whoami
+```
+
+**Expected output (authenticated):**
+```
+> user@example.com
+```
+
+**Expected output (not authenticated):**
+```
+Error: Not authenticated. Please run `vercel login`.
+```
+
+If not authenticated:
+1. Ask user for permission to authenticate
+2. Execute `vercel login` (this opens a browser for authentication)
+3. Wait for authentication to complete, then verify with `vercel whoami`
 
 ## Supported Frameworks
 
@@ -42,6 +75,96 @@ Use this skill when:
 | Nuxt | Yes | `nuxt build` | `.nuxt` |
 | Astro | Yes | `npm run build` | `dist` |
 | SvelteKit | Yes | `npm run build` | `.svelte-kit` |
+
+## CLI Commands
+
+### Deploy Preview
+
+Deploy to a preview URL (recommended for testing):
+
+```bash
+cd /path/to/project
+vercel --yes
+```
+
+**Expected output:**
+```
+Vercel CLI 32.x.x
+🔍  Inspect: https://vercel.com/team/project/xxx
+✅  Preview: https://project-xxx.vercel.app
+```
+
+### Deploy Production
+
+Deploy to the production domain:
+
+```bash
+cd /path/to/project
+vercel --prod --yes
+```
+
+**Expected output:**
+```
+Vercel CLI 32.x.x
+🔍  Inspect: https://vercel.com/team/project/xxx
+✅  Production: https://project.vercel.app
+```
+
+### List Projects
+
+```bash
+vercel list
+```
+
+**Expected output:**
+```
+> 3 Deployments found under username
+
+my-app      https://my-app.vercel.app         2h ago
+my-api      https://my-api.vercel.app         1d ago
+portfolio   https://portfolio.vercel.app       3d ago
+```
+
+### Get Project Info
+
+```bash
+vercel inspect <deployment-url>
+```
+
+### Set Environment Variables
+
+```bash
+vercel env add VARIABLE_NAME
+```
+
+Interactive prompt for value and target environments (production/preview/development).
+
+For non-interactive:
+```bash
+echo "value" | vercel env add VARIABLE_NAME production
+```
+
+### List Environment Variables
+
+```bash
+vercel env ls
+```
+
+### Pull Environment Variables Locally
+
+```bash
+vercel env pull
+```
+
+Creates `.env.local` with all environment variables.
+
+### Link to Existing Project
+
+```bash
+vercel link
+```
+
+Links current directory to an existing Vercel project.
 
 ## Deployment Steps
 
@@ -65,93 +188,107 @@ If `vercel.json` exists, validate it. Common structure:
 }
 ```
 
-### 3. Deploy
+### 2.5. Check CLI Installation
 
-Use `vercel_deploy` tool with:
-- `project_name`: Name for the Vercel project
-- `git_repo`: GitHub repository URL (recommended for CI/CD)
-- `production`: Whether to deploy to production domain
-- `environment_variables`: Required env vars
-- `framework`: Framework preset if not auto-detected
+```bash
+vercel --version
+```
 
-### 4. Verify Deployment
+If CLI not installed:
+1. Ask user for permission to install
+2. Execute: `npm install -g vercel`
+3. Verify installation with `vercel --version`
 
-After deployment, use `vercel_get_deployments` to check:
-- Deployment state (READY, BUILDING, ERROR)
-- Deployment URL
-- Build logs if there are errors
+### 3. Check Authentication
 
-## Available Tools
+```bash
+vercel whoami
+```
 
-### vercel_deploy
+If not authenticated:
+1. Ask user for permission to authenticate
+2. Execute `vercel login` (opens browser)
+3. Verify with `vercel whoami` after completion
 
-Deploy a project to Vercel.
+### 4. Deploy
 
-**Parameters:**
-- `project_name` (required): Name for the Vercel project
-- `git_repo`: Git repository URL for CI/CD integration
-- `production`: Deploy to production (default: false for preview)
-- `environment_variables`: Dict of environment variables
-- `framework`: Framework preset (nextjs, vite, etc.)
-- `build_command`: Custom build command
-- `output_directory`: Custom output directory
+```bash
+cd /path/to/project
+vercel --yes              # Preview
+vercel --prod --yes       # Production
+```
 
-### vercel_list_projects
+### 5. Verify Deployment
 
-List all projects in the user's Vercel account.
-
-**Parameters:**
-- `limit`: Maximum projects to return (default: 20)
-
-### vercel_get_deployments
-
-Get recent deployments for a project.
-
-**Parameters:**
-- `project_name` (required): Name of the Vercel project
-- `limit`: Number of deployments (default: 10)
-- `state`: Filter by state (READY, ERROR, BUILDING, QUEUED, CANCELED)
+Parse the output URL and confirm deployment is live.
 
 ## Error Handling
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `MISSING_CREDENTIALS` | No Vercel token | Configure OPENOPS_VERCEL_TOKEN |
-| `forbidden` | Token lacks permissions | Generate new token with correct scopes |
-| `not_found` | Project doesn't exist | Create project first or check name |
-| `rate_limited` | Too many API requests | Wait and retry |
+| Error Output | Cause | Action |
+|--------------|-------|--------|
+| `Error: Not authenticated` | Not logged in | Ask permission, then execute `vercel login` |
+| `Error: No Project Settings found` | First deploy | Execute `vercel --yes` to set up |
+| `Error: Build Failed` | Build error | Analyze build logs, then fix the issue |
+| `Error: forbidden` | Token lacks permissions | Ask permission, then execute `vercel login` to re-authenticate |
+| `command not found: vercel` | CLI not installed | Ask permission, then install CLI |
 
-## Environment Variables
+## Output Parsing
 
-Vercel environment variables can be scoped to:
-- `production`: Only production deployments
-- `preview`: Only preview/staging deployments
-- `development`: Local development with `vercel dev`
+### Deployment Success
 
-Set all three targets for variables needed everywhere.
+Look for lines containing:
+- `✅  Preview:` or `✅  Production:` followed by URL
+- `🔍  Inspect:` followed by dashboard URL
+
+### Deployment Failure
+
+Look for:
+- `Error:` prefix
+- `Build Failed` message
+- Exit code non-zero
 
 ## Example Conversations
 
-**Simple deployment:**
+**Deploy project (CLI not installed):**
 ```
 User: "Deploy my project to Vercel"
-Agent: "I'll check your project structure first..."
-Agent: "Found a Next.js project. Creating Vercel project 'my-app'. Proceed?"
+Agent: [executes: vercel --version]
+Agent: "Vercel CLI is not installed. May I install it for you?"
 User: "Yes"
-Agent: "Deployed! Your app is live at https://my-app.vercel.app"
+Agent: [executes: npm install -g vercel]
+Agent: "CLI installed. Checking authentication..."
+Agent: [executes: vercel whoami]
+Agent: "Not authenticated. May I run `vercel login`? This will open a browser window."
+User: "Yes"
+Agent: [executes: vercel login]
+Agent: "Please complete authentication in the browser..."
+Agent: [executes: vercel whoami]
+Agent: "Authenticated as user@example.com. Deploying to preview..."
+Agent: [executes: vercel --yes]
+Agent: "Deployed! Your app is live at https://project-xxx.vercel.app"
 ```
 
-**With environment variables:**
+**Simple deployment (already set up):**
 ```
-User: "Deploy to Vercel with my API key"
-Agent: "I'll deploy with the environment variable. What's the variable name and value?"
-User: "NEXT_PUBLIC_API_URL=https://api.example.com"
-Agent: "Deploying with NEXT_PUBLIC_API_URL set..."
+User: "Deploy my project to Vercel"
+Agent: [executes: vercel whoami]
+Agent: "You're logged in as user@example.com. Deploying to preview..."
+Agent: [executes: vercel --yes]
+Agent: "Deployed! Your app is live at https://project-xxx.vercel.app"
+```
+
+**Production deployment:**
+```
+User: "Deploy to production"
+Agent: "Deploying to production..."
+Agent: [executes: vercel --prod --yes]
+Agent: "Production deployment complete! Live at https://project.vercel.app"
 ```
 
 ## Best Practices
 
-1. **Use Git integration** for production apps - enables automatic deployments
-2. **Preview deployments** for PRs - deploy with `production: false`
-3. **Environment variables** - use Vercel's encrypted storage, not `.env` files
+1. **Use preview deployments** for testing before production
+2. **Use `vercel link`** to connect to existing projects
+3. **Environment variables** - use `vercel env` commands, not `.env` files in git
 4. **Monorepos** - set `rootDirectory` in vercel.json for specific app
+5. **Always use `--yes`** flag to skip confirmation prompts in automated workflows
