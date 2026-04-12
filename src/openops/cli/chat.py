@@ -25,6 +25,9 @@ from openops.exceptions import CredentialError, OpenOpsError
 logger = logging.getLogger(__name__)
 console = Console()
 
+# Safety cap so a runaway agent cannot prompt forever in one user turn.
+_MAX_CHAINED_TOOL_APPROVALS = 100
+
 
 def _extract_response_content(result: dict) -> str:
     """Extract the assistant's response content from the result."""
@@ -97,13 +100,11 @@ def _display_pending_action(action: dict) -> None:
             args = request.get("args", {})
             for key, value in args.items():
                 display_value = str(value)
-                if len(display_value) > 80:
-                    display_value = display_value[:77] + "..."
                 table.add_row(f"  {key}", display_value)
 
             description = request.get("description", "")
             if description:
-                table.add_row("Description", description[:100])
+                table.add_row("Description", description)
     else:
         # Fallback for legacy format
         action_type = action.get("type", "unknown")
@@ -115,11 +116,17 @@ def _display_pending_action(action: dict) -> None:
         if "args" in action:
             for key, value in action["args"].items():
                 display_value = str(value)
-                if len(display_value) > 80:
-                    display_value = display_value[:77] + "..."
                 table.add_row(f"  {key}", display_value)
 
     console.print(table)
+
+
+def _hitl_parallel_action_count(action: dict) -> int:
+    """How many tool calls are bundled in one HITL interrupt (needs matching resume decisions)."""
+    requests = action.get("action_requests")
+    if isinstance(requests, list) and requests:
+        return len(requests)
+    return 1
 
 
 def _handle_approval_flow(runtime: OpenOpsRuntime, thread_id: str, action: dict) -> dict | None:
@@ -136,16 +143,20 @@ def _handle_approval_flow(runtime: OpenOpsRuntime, thread_id: str, action: dict)
         default="a",
     )
 
+    n = _hitl_parallel_action_count(action)
+    if n > 1:
+        logger.debug("HITL batch resume: %d parallel tool call(s)", n)
+
     if decision == "a":
         console.print("[green]Approved[/green]")
-        return runtime.resume(thread_id, "approve")
+        return runtime.resume(thread_id, "approve", hitl_action_count=n)
     elif decision == "r":
         reason = Prompt.ask("[yellow]Reason for rejection[/yellow]", default="")
         console.print("[red]Rejected[/red]")
-        return runtime.resume(thread_id, "reject", message=reason)
+        return runtime.resume(thread_id, "reject", message=reason, hitl_action_count=n)
     else:
         console.print("[yellow]Edit not yet implemented - approving instead[/yellow]")
-        return runtime.resume(thread_id, "approve")
+        return runtime.resume(thread_id, "approve", hitl_action_count=n)
 
 
 def _show_header(project_path: Path) -> None:
@@ -173,6 +184,58 @@ def _show_response(content: str) -> None:
             Markdown(content),
             title="[bold blue]OpenOps[/bold blue]",
             border_style="blue",
+        )
+    )
+
+
+def _run_approval_until_idle(runtime: OpenOpsRuntime, thread_id: str) -> None:
+    """Prompt for all pending HITL approvals in sequence for this thread.
+
+    After ``resume``, the agent may immediately request another ``execute`` (or
+    other gated tool). Without draining interrupts here, the CLI would return
+    to the user prompt while the graph is still paused, which makes assistant
+    text look ahead of the next approval step.
+    """
+    for round_idx in range(_MAX_CHAINED_TOOL_APPROVALS):
+        interrupt = _check_for_interrupt(runtime, thread_id)
+        if not interrupt:
+            if round_idx:
+                logger.debug("No further tool approvals after %d round(s)", round_idx)
+            return
+
+        logger.info(
+            "Tool approval required (round %d/%d, thread_id=%s)",
+            round_idx + 1,
+            _MAX_CHAINED_TOOL_APPROVALS,
+            thread_id,
+        )
+        console.print()
+        console.print(
+            Panel(
+                "[yellow]The agent wants to perform an action that requires your approval.[/yellow]\n"
+                "[dim][a]pprove / [r]eject / [e]dit[/dim]",
+                title="Approval Required",
+                border_style="yellow",
+            )
+        )
+        resume_result = _handle_approval_flow(runtime, thread_id, interrupt)
+        if not resume_result:
+            logger.debug("Approval flow returned no result; stopping chained approvals")
+            return
+        content = _extract_response_content(resume_result)
+        _show_response(content)
+
+    logger.warning(
+        "Chained tool approvals exceeded cap (%d); thread_id=%s",
+        _MAX_CHAINED_TOOL_APPROVALS,
+        thread_id,
+    )
+    console.print(
+        Panel(
+            f"[yellow]Stopped after {_MAX_CHAINED_TOOL_APPROVALS} chained approvals "
+            "in one turn. Send another message to continue.[/yellow]",
+            title="Approval limit",
+            border_style="yellow",
         )
     )
 
@@ -208,22 +271,7 @@ def _chat_loop(runtime: OpenOpsRuntime, thread_id: str, project_path: Path) -> N
 
             content = _extract_response_content(result)
             _show_response(content)
-
-            interrupt = _check_for_interrupt(runtime, thread_id)
-            if interrupt:
-                console.print()
-                console.print(
-                    Panel(
-                        "[yellow]The agent wants to perform an action that requires your approval.[/yellow]\n"
-                        "[dim][a]pprove / [r]eject / [e]dit[/dim]",
-                        title="Approval Required",
-                        border_style="yellow",
-                    )
-                )
-                resume_result = _handle_approval_flow(runtime, thread_id, interrupt)
-                if resume_result:
-                    content = _extract_response_content(resume_result)
-                    _show_response(content)
+            _run_approval_until_idle(runtime, thread_id)
 
         except KeyboardInterrupt:
             console.print("\n[dim]Interrupted[/dim]")

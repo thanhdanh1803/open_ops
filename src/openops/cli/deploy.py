@@ -122,6 +122,20 @@ def _show_project_summary(project_path: Path) -> None:
     console.print()
 
 
+def _hitl_payload_from_interrupt(interrupt: object) -> dict:
+    """Normalize LangGraph interrupt value to a dict (HITL request shape)."""
+    payload = getattr(interrupt, "value", interrupt)
+    return payload if isinstance(payload, dict) else {}
+
+
+def _hitl_parallel_action_count(payload: dict) -> int:
+    """Match ``HumanInTheLoopMiddleware``: one resume decision per batched tool call."""
+    requests = payload.get("action_requests")
+    if isinstance(requests, list) and requests:
+        return len(requests)
+    return 1
+
+
 def _handle_deployment_approval(runtime, thread_id: str, platform: str) -> dict | None:
     """Handle deployment approval when agent triggers interrupt."""
     try:
@@ -131,14 +145,16 @@ def _handle_deployment_approval(runtime, thread_id: str, platform: str) -> dict 
             for task in state.tasks or []:
                 if task.get("interrupts"):
                     interrupt = task["interrupts"][0]
+                    payload = _hitl_payload_from_interrupt(interrupt)
+                    n = _hitl_parallel_action_count(payload)
 
                     table = Table(title="Deployment Details", show_header=True)
                     table.add_column("Field", style="cyan")
                     table.add_column("Value", style="green")
                     table.add_row("Platform", platform)
 
-                    if "args" in interrupt:
-                        for key, value in interrupt["args"].items():
+                    if "args" in payload:
+                        for key, value in payload["args"].items():
                             display_value = str(value)
                             if len(display_value) > 60:
                                 display_value = display_value[:57] + "..."
@@ -148,10 +164,10 @@ def _handle_deployment_approval(runtime, thread_id: str, platform: str) -> dict 
                     console.print()
 
                     if Confirm.ask("[yellow]Proceed with deployment?[/yellow]", default=True):
-                        return runtime.resume(thread_id, "approve")
+                        return runtime.resume(thread_id, "approve", hitl_action_count=n)
                     else:
                         reason = Prompt.ask("[dim]Reason (optional)[/dim]", default="")
-                        return runtime.resume(thread_id, "reject", message=reason)
+                        return runtime.resume(thread_id, "reject", message=reason, hitl_action_count=n)
 
         return None
     except Exception as e:

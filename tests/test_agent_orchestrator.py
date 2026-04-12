@@ -207,6 +207,23 @@ class TestOrchestratorRuntime:
         assert command.resume["decisions"][0]["type"] == "approve"
 
     @patch("openops.agent.orchestrator.create_deep_agent")
+    def test_resume_approve_batched_hitl(self, mock_create_agent, config, mock_store):
+        mock_agent = MagicMock()
+        mock_agent.invoke.return_value = {"messages": []}
+        mock_create_agent.return_value = mock_agent
+
+        runtime = OrchestratorRuntime(config=config, project_store=mock_store)
+        runtime.resume(
+            thread_id="test-thread",
+            decision="approve",
+            hitl_action_count=3,
+        )
+
+        command = mock_agent.invoke.call_args[0][0]
+        assert len(command.resume["decisions"]) == 3
+        assert all(d["type"] == "approve" for d in command.resume["decisions"])
+
+    @patch("openops.agent.orchestrator.create_deep_agent")
     def test_resume_reject_with_message(self, mock_create_agent, config, mock_store):
         mock_agent = MagicMock()
         mock_agent.invoke.return_value = {"messages": []}

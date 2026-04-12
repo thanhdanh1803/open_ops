@@ -1,7 +1,7 @@
 ---
-name: railway-deploy
+name: railway
 description: Deploy backend services and databases to Railway using the Railway CLI
-version: 2.0.0
+version: 2.1.0
 author: OpenOps Team
 risk_level: write
 platforms:
@@ -21,6 +21,8 @@ Use this skill when:
 - Project is built with Python, Node.js, Go, Rust, or other backend frameworks
 - User mentions Railway as the target platform
 - User needs infrastructure with persistent storage
+
+When an **agent** deploys: follow **list → user choice → non-interactive `railway link` → `railway up`** (see **Agent workflow** below); do not depend on interactive CLI menus in subprocesses.
 
 ## Prerequisites
 
@@ -104,21 +106,55 @@ Each project has environments (production, staging, etc.) with isolated:
 
 ## CLI Commands
 
+### Agent workflow (preferred): list → user chooses → non-interactive link and deploy
+
+**Do not rely on interactive `railway link` or menu-driven deploy** when acting as an agent. Those prompts often break without a real TTY (e.g. “Available options can not be empty”). For deploy, use this flow:
+
+1. **List projects (JSON)** — run from the directory you will deploy (or after `cd` into the service root):
+   ```bash
+   railway list --json
+   ```
+   Each entry includes **`workspace`** (id, name), **`id`** / **`name`** for the project, **`environments`**, and **`services`**. Use this to build a clear list for the user.
+
+2. **Workspaces only** — if you need workspace ids/names separately:
+   ```bash
+   railway whoami --json
+   ```
+   The **`workspaces`** array lists **`id`** and **`name`** for each workspace.
+
+3. **Ask the user to choose** — present **project** (name + id). If multiple **environments** or **services** apply, ask which **environment** (and **service** if needed) before running commands.
+
+4. **Link without prompts** (creates/updates `.railway` in the current directory):
+   ```bash
+   railway link --workspace <workspace_id> --project <project_id_or_name> --environment <environment_name_or_id> [--service <service_name_or_id>] --json
+   ```
+   Omit **`--workspace`** when the account has a single workspace or the default is correct.
+
+5. **Deploy** (after link):
+   ```bash
+   railway up
+   ```
+   Non-blocking logs:
+   ```bash
+   railway up --detach
+   ```
+   If your CLI supports deploying without a prior link in that directory, you may use:
+   ```bash
+   railway up --project <project_id> --environment <environment_name_or_id> [--service <service_name_or_id>]
+   ```
+   (When using **`--project`**, **`--environment`** is required per Railway docs.)
+
+6. **Automation / CI** — prefer **`RAILWAY_TOKEN`** (project token) or **`RAILWAY_API_TOKEN`** per Railway docs; still use explicit **project**, **environment**, and **service** flags where applicable—do not depend on interactive menus.
+
 ### Link to Project
 
-First, link to an existing project or create a new one:
+**Preferred:** non-interactive link (see **Agent workflow** above).
+
+Interactive fallback (human in a real terminal only):
 
 ```bash
 cd /path/to/project
 railway link
-```
-
-**Expected output:**
-```
-? Select a project
-  my-project-prod
-> my-project-staging
-  Create new project
 ```
 
 Or create new project directly:
@@ -128,11 +164,17 @@ railway init
 
 ### List Projects
 
+**For agents, always use JSON:**
+```bash
+railway list --json
+```
+
+Human-readable table (optional):
 ```bash
 railway list
 ```
 
-**Expected output:**
+**Expected output (table):**
 ```
 ┌──────────────────────────────────┬─────────────────────────────────┐
 │ Project                          │ ID                              │
@@ -278,25 +320,41 @@ If not authenticated:
 2. Execute `railway login` (opens browser)
 3. Verify with `railway whoami` after completion
 
-### 2. Link or Create Project
+### 2. List projects and get user selection
 
 ```bash
-railway link
+railway list --json
 ```
 
-Or list existing:
+Present projects (and environments/services from the JSON). **Ask the user which project** (and environment/service if needed) to use.
+
+### 3. Link non-interactively
+
+From the directory to deploy:
+
 ```bash
-railway list
+railway link --workspace <workspace_id> --project <project_id_or_name> --environment <environment_name_or_id> [--service <service_name_or_id>] --json
 ```
 
-### 3. Deploy
+Avoid interactive **`railway link`** unless the user is at a real terminal and chooses that path.
+
+### 4. Deploy
 
 ```bash
-cd /path/to/project
 railway up
 ```
 
-### 4. Verify
+Use **`railway up --detach`** for non-blocking deploy. You may use **`railway up --project … --environment …`** without a prior **`railway link`** if the CLI version supports it and the situation calls for it.
+
+### Alternative: new project (user wants create, not link)
+
+```bash
+railway init
+```
+
+Then run **`railway up`** (or **`railway up --detach`**) as in step 4.
+
+### 5. Verify
 
 ```bash
 railway status
@@ -323,9 +381,9 @@ Database connection strings are automatically injected as environment variables:
 | Error Output | Cause | Action |
 |--------------|-------|--------|
 | `Not logged in` | Not authenticated | Ask permission, then execute `railway login` |
-| `No project linked` | Not linked to project | Execute `railway link` to link/create project |
+| `No project linked` | Not linked to project | Run **`railway list --json`**, ask user to choose project/env/service, then **`railway link --project … --environment … [--workspace …] [--service …] --json`** (avoid interactive `railway link` in agent runs) |
 | `Build failed` | Build error | Execute `railway logs` to diagnose, then fix |
-| `Project not found` | Invalid project | Execute `railway list` to find correct project |
+| `Project not found` | Invalid project | Run **`railway list --json`** and reconcile ids/names with the user |
 | `command not found: railway` | CLI not installed | Ask permission, then install CLI |
 
 ## Output Parsing
@@ -395,7 +453,11 @@ User: "Go ahead"
 Agent: [executes: railway login]
 Agent: "Please complete authentication in the browser..."
 Agent: [executes: railway whoami]
-Agent: "Authenticated as user@example.com. Deploying..."
+Agent: "Authenticated as user@example.com. Listing your Railway projects..."
+Agent: [executes: railway list --json]
+Agent: "Here are your projects: (1) my-app-prod — id … (2) my-app-staging — id …. Which should I deploy to?"
+User: "my-app-prod, production"
+Agent: [executes: railway link --project my-app-prod --environment production --json]
 Agent: [executes: railway up]
 Agent: "Deployed! Service is building at https://railway.app/project/xxx"
 ```
@@ -404,8 +466,12 @@ Agent: "Deployed! Service is building at https://railway.app/project/xxx"
 ```
 User: "Deploy my FastAPI backend to Railway"
 Agent: [executes: railway whoami]
-Agent: "You're logged in. Deploying to project 'my-app-prod'..."
-Agent: [executes: railway up]
+Agent: "You're logged in. Fetching projects..."
+Agent: [executes: railway list --json]
+Agent: "Projects: my-app-prod, my-app-staging. Which project and environment?"
+User: "my-app-prod, production"
+Agent: [executes: railway link --project my-app-prod --environment production --json]
+Agent: [executes: railway up --detach]
 Agent: "Deployed! Service is building. URL: https://api-production.up.railway.app"
 ```
 
@@ -421,8 +487,9 @@ Agent: "Your service is running:
 
 ## Best Practices
 
-1. **Use environment variables** for configuration, never hardcode secrets
-2. **Health checks** - implement `/health` endpoint for automatic restart
-3. **Graceful shutdown** - handle SIGTERM for zero-downtime deploys
-4. **Use `railway up --detach`** for non-blocking deployments
-5. **Databases** - use Railway's managed databases for simplicity
+1. **Deploy flow** — **`railway list --json`** → user picks project (and env/service) → **`railway link … --json`** → **`railway up`**; avoid interactive CLI wizards in agent subprocesses
+2. **Use environment variables** for configuration, never hardcode secrets
+3. **Health checks** - implement `/health` endpoint for automatic restart
+4. **Graceful shutdown** - handle SIGTERM for zero-downtime deploys
+5. **Use `railway up --detach`** for non-blocking deployments
+6. **Databases** - use Railway's managed databases for simplicity

@@ -93,6 +93,8 @@ class OpenOpsRuntime:
         decision: str,
         message: str | None = None,
         edited_action: dict | None = None,
+        *,
+        hitl_action_count: int = 1,
     ) -> dict:
         """Resume execution after an interrupt.
 
@@ -101,6 +103,7 @@ class OpenOpsRuntime:
             decision: One of "approve", "reject", or "edit"
             message: Optional message for reject decisions
             edited_action: Modified action for edit decisions
+            hitl_action_count: One resume decision per tool call in a batched HITL request
 
         Returns:
             Agent response after resuming
@@ -110,6 +113,7 @@ class OpenOpsRuntime:
             decision=decision,
             message=message,
             edited_action=edited_action,
+            hitl_action_count=hitl_action_count,
         )
 
     def close(self) -> None:

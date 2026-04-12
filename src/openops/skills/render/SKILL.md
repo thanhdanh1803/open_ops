@@ -1,5 +1,5 @@
 ---
-name: render-deploy
+name: render
 description: Deploy web services, static sites, and workers to Render using the Render CLI
 version: 2.0.0
 author: OpenOps Team

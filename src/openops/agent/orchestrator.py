@@ -264,6 +264,8 @@ class OrchestratorRuntime:
         decision: str,
         message: str | None = None,
         edited_action: dict | None = None,
+        *,
+        hitl_action_count: int = 1,
     ) -> dict[str, Any]:
         """Resume execution after an interrupt.
 
@@ -272,24 +274,34 @@ class OrchestratorRuntime:
             decision: One of "approve", "reject", or "edit"
             message: Optional message for reject decisions
             edited_action: Modified action for edit decisions
+            hitl_action_count: Number of parallel tool calls in one HITL interrupt
+                (``HumanInTheLoopMiddleware`` requires one decision per call).
 
         Returns:
             Agent response after resuming
         """
         from langgraph.types import Command
 
-        logger.info(f"Resuming thread {thread_id} with decision: {decision}")
+        n = max(1, hitl_action_count)
+        logger.info(
+            "Resuming thread %s with decision=%s for %d HITL action(s)",
+            thread_id,
+            decision,
+            n,
+        )
 
         config = {"configurable": {"thread_id": thread_id}}
 
-        decision_payload: dict[str, Any] = {"type": decision}
+        template: dict[str, Any] = {"type": decision}
         if message:
-            decision_payload["message"] = message
+            template["message"] = message
         if edited_action:
-            decision_payload["edited_action"] = edited_action
+            template["edited_action"] = edited_action
+
+        decisions = [dict(template) for _ in range(n)]
 
         result = self._agent.invoke(
-            Command(resume={"decisions": [decision_payload]}),
+            Command(resume={"decisions": decisions}),
             config=config,
         )
 

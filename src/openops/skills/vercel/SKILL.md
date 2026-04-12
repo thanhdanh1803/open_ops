@@ -1,5 +1,5 @@
 ---
-name: vercel-deploy
+name: vercel
 description: Deploy frontend applications to Vercel using the Vercel CLI
 version: 2.0.0
 author: OpenOps Team
