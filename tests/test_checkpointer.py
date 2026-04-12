@@ -1,8 +1,5 @@
 """Tests for checkpointer configuration and factory."""
 
-import tempfile
-from pathlib import Path
-
 import pytest
 
 from openops.storage.checkpointer import (

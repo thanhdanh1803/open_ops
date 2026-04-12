@@ -64,7 +64,11 @@ class RenderSkill(BaseSkill):
             risk_level=self.risk_level,
             tags=["deployment", "backend", "frontend", "render", "static-site"],
             requires_credentials=["OPENOPS_RENDER_API_KEY"],
-            provides_tools=["render_deploy", "render_list_services", "render_get_deployments"],
+            provides_tools=[
+                "render_deploy",
+                "render_list_services",
+                "render_get_deployments",
+            ],
         )
 
     def get_skill_instructions(self) -> str | None:
@@ -122,10 +126,10 @@ class RenderSkill(BaseSkill):
             error_body = e.response.json() if e.response.content else {}
             error_message = error_body.get("message", str(e))
             logger.error(f"Render API error: {error_message}")
-            raise PlatformAPIError("render", error_message, e.response.status_code)
+            raise PlatformAPIError("render", error_message, e.response.status_code) from e
         except httpx.RequestError as e:
             logger.error(f"Render request error: {e}")
-            raise PlatformAPIError("render", f"Request failed: {e}")
+            raise PlatformAPIError("render", f"Request failed: {e}") from e
 
     def _create_deploy_tool(self):
         """Create the render_deploy tool."""
@@ -170,7 +174,12 @@ class RenderSkill(BaseSkill):
                     error="MISSING_CREDENTIALS",
                 )
 
-            valid_types = ["web_service", "static_site", "background_worker", "private_service"]
+            valid_types = [
+                "web_service",
+                "static_site",
+                "background_worker",
+                "private_service",
+            ]
             if service_type not in valid_types:
                 return SkillResult(
                     success=False,
@@ -272,9 +281,7 @@ class RenderSkill(BaseSkill):
             service_data["serviceDetails"] = service_details
 
         if environment_variables:
-            service_data["envVars"] = [
-                {"key": k, "value": v} for k, v in environment_variables.items()
-            ]
+            service_data["envVars"] = [{"key": k, "value": v} for k, v in environment_variables.items()]
 
         return service_data
 
@@ -315,15 +322,17 @@ class RenderSkill(BaseSkill):
 
                 for item in items:
                     service = item.get("service", item)
-                    services.append({
-                        "id": service.get("id"),
-                        "name": service.get("name"),
-                        "type": service.get("type"),
-                        "url": service.get("serviceDetails", {}).get("url"),
-                        "status": "active" if not service.get("suspended") else "suspended",
-                        "updated_at": service.get("updatedAt"),
-                        "dashboard_url": f"https://dashboard.render.com/web/{service.get('id')}",
-                    })
+                    services.append(
+                        {
+                            "id": service.get("id"),
+                            "name": service.get("name"),
+                            "type": service.get("type"),
+                            "url": service.get("serviceDetails", {}).get("url"),
+                            "status": "active" if not service.get("suspended") else "suspended",
+                            "updated_at": service.get("updatedAt"),
+                            "dashboard_url": f"https://dashboard.render.com/web/{service.get('id')}",
+                        }
+                    )
 
                 logger.info(f"Listed {len(services)} Render services")
                 return SkillResult(
@@ -379,14 +388,16 @@ class RenderSkill(BaseSkill):
 
                 for item in items:
                     deploy = item.get("deploy", item)
-                    deployments.append({
-                        "id": deploy.get("id"),
-                        "status": deploy.get("status"),
-                        "commit": deploy.get("commit", {}).get("id", "")[:7] if deploy.get("commit") else None,
-                        "commit_message": deploy.get("commit", {}).get("message") if deploy.get("commit") else None,
-                        "created_at": deploy.get("createdAt"),
-                        "finished_at": deploy.get("finishedAt"),
-                    })
+                    deployments.append(
+                        {
+                            "id": deploy.get("id"),
+                            "status": deploy.get("status"),
+                            "commit": deploy.get("commit", {}).get("id", "")[:7] if deploy.get("commit") else None,
+                            "commit_message": deploy.get("commit", {}).get("message") if deploy.get("commit") else None,
+                            "created_at": deploy.get("createdAt"),
+                            "finished_at": deploy.get("finishedAt"),
+                        }
+                    )
 
                 logger.info(f"Listed {len(deployments)} deployments for service {service_id}")
                 return SkillResult(

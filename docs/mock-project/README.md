@@ -57,7 +57,7 @@ When analyzing this project, OpenOps should detect:
    - Language: TypeScript
    - Type: Frontend
    - Required env: `NEXT_PUBLIC_API_URL`
-   
+
 3. **Backend Service**:
    - Framework: FastAPI
    - Language: Python

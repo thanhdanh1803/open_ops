@@ -171,7 +171,10 @@ class ProjectStoreBase(ABC):
         return {
             "project": project,
             "services": [
-                {"service": service, "deployment": self.get_active_deployment(service.id)}
+                {
+                    "service": service,
+                    "deployment": self.get_active_deployment(service.id),
+                }
                 for service in services
             ],
         }

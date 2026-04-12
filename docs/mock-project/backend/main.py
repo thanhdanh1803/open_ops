@@ -1,8 +1,9 @@
 """Sample FastAPI backend for testing OpenOps."""
 
-import os
 import logging
+import os
 from datetime import datetime
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -35,7 +36,7 @@ class Item(BaseModel):
 async def health_check():
     """Health check endpoint."""
     db_connected = DATABASE_URL is not None
-    
+
     return HealthResponse(
         status="healthy",
         timestamp=datetime.utcnow().isoformat(),
@@ -48,7 +49,7 @@ async def get_item(item_id: int):
     """Get an item by ID."""
     if item_id < 1:
         raise HTTPException(status_code=404, detail="Item not found")
-    
+
     return Item(
         id=item_id,
         name=f"Item {item_id}",
@@ -64,4 +65,5 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

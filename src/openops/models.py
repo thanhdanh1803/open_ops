@@ -72,9 +72,7 @@ class Service(BaseModel):
     name: str = Field(description="Service name")
     path: str = Field(description="Path relative to project root")
     description: str = Field(default="", description="Service description")
-    type: str | None = Field(
-        default=None, description="Service type: frontend, backend, worker, database"
-    )
+    type: str | None = Field(default=None, description="Service type: frontend, backend, worker, database")
     framework: str | None = Field(default=None, description="Framework: Next.js, FastAPI, etc.")
     language: str | None = Field(default=None, description="Programming language")
     version: str | None = Field(default=None, description="Framework/runtime version")
@@ -83,9 +81,7 @@ class Service(BaseModel):
     start_command: str | None = Field(default=None, description="Start command")
     port: int | None = Field(default=None, description="Default port")
     env_vars: list[str] = Field(default_factory=list, description="Required environment variables")
-    dependencies: list[str] = Field(
-        default_factory=list, description="IDs of services this depends on"
-    )
+    dependencies: list[str] = Field(default_factory=list, description="IDs of services this depends on")
     keypoints: list[str] = Field(default_factory=list, description="Service-specific observations")
 
 

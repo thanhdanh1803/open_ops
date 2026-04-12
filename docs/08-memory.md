@@ -231,12 +231,12 @@ class ProjectStore:
         self.db = sqlite3.connect(self.db_path)
         self.db.row_factory = sqlite3.Row
         self._init_schema()
-    
+
     def _init_schema(self):
         """Initialize database schema."""
         with open(Path(__file__).parent / "schema.sql") as f:
             self.db.executescript(f.read())
-    
+
     # Project operations
     def upsert_project(self, project: Project) -> None:
         """Insert or update a project."""
@@ -254,16 +254,16 @@ class ProjectStore:
             json.dumps(project.keypoints), project.analyzed_at, project.updated_at
         ))
         self.db.commit()
-    
+
     def get_project(self, path: str) -> Optional[Project]:
         """Get project by path."""
         row = self.db.execute(
             "SELECT * FROM projects WHERE path = ?", (path,)
         ).fetchone()
-        
+
         if not row:
             return None
-        
+
         return Project(
             id=row["id"],
             path=row["path"],
@@ -273,12 +273,12 @@ class ProjectStore:
             analyzed_at=row["analyzed_at"],
             updated_at=row["updated_at"],
         )
-    
+
     # Service operations
     def upsert_service(self, service: Service) -> None:
         """Insert or update a service."""
         self.db.execute("""
-            INSERT INTO services 
+            INSERT INTO services
             (id, project_id, name, path, description, type, framework, language,
              version, entry_point, build_command, start_command, port, env_vars,
              dependencies, keypoints)
@@ -297,15 +297,15 @@ class ProjectStore:
             json.dumps(service.dependencies), json.dumps(service.keypoints)
         ))
         self.db.commit()
-    
+
     def get_services_for_project(self, project_id: str) -> list[Service]:
         """Get all services for a project."""
         rows = self.db.execute(
             "SELECT * FROM services WHERE project_id = ?", (project_id,)
         ).fetchall()
-        
+
         return [self._row_to_service(row) for row in rows]
-    
+
     # Deployment operations
     def add_deployment(self, deployment: Deployment) -> None:
         """Record a new deployment."""
@@ -314,7 +314,7 @@ class ProjectStore:
             UPDATE deployments SET status = 'superseded'
             WHERE service_id = ? AND status = 'active'
         """, (deployment.service_id,))
-        
+
         self.db.execute("""
             INSERT INTO deployments
             (id, service_id, platform, url, dashboard_url, deployed_at, config, status)
@@ -325,7 +325,7 @@ class ProjectStore:
             json.dumps(deployment.config), deployment.status
         ))
         self.db.commit()
-    
+
     def get_active_deployment(self, service_id: str) -> Optional[Deployment]:
         """Get active deployment for a service."""
         row = self.db.execute("""
@@ -334,21 +334,21 @@ class ProjectStore:
             ORDER BY deployed_at DESC
             LIMIT 1
         """, (service_id,)).fetchone()
-        
+
         if not row:
             return None
-        
+
         return self._row_to_deployment(row)
-    
+
     # Query helpers
     def get_project_summary(self, path: str) -> dict:
         """Get full project summary with services and deployments."""
         project = self.get_project(path)
         if not project:
             return None
-        
+
         services = self.get_services_for_project(project.id)
-        
+
         return {
             "project": project,
             "services": [
@@ -370,16 +370,16 @@ For users with complex multi-project setups, Neo4j provides richer graph queries
 ```python
 async def setup_neo4j():
     """Guide user through Neo4j setup."""
-    
+
     console.print("Neo4j provides powerful graph queries for complex projects.")
     console.print("You can run it locally with Docker.\n")
-    
+
     if Confirm.ask("Set up Neo4j with Docker?"):
         # Check Docker
         if not docker_available():
             console.print("[red]Docker not found. Install Docker first.[/red]")
             return
-        
+
         # Run Neo4j container
         console.print("Starting Neo4j container...")
         subprocess.run([
@@ -390,18 +390,18 @@ async def setup_neo4j():
             "-e", "NEO4J_AUTH=neo4j/openops123",
             "neo4j:latest"
         ])
-        
+
         # Wait for startup
         await wait_for_neo4j()
-        
+
         # Update config
         config.set("memory.backend", "neo4j")
         config.set("memory.neo4j_uri", "bolt://localhost:7687")
         config.set("memory.neo4j_user", "neo4j")
         config.set("memory.neo4j_password", "openops123")
-        
+
         console.print("[green]Neo4j is ready![/green]")
-        
+
         # Migrate existing data
         if Confirm.ask("Migrate existing project data to Neo4j?"):
             await migrate_to_neo4j()
@@ -415,7 +415,7 @@ from neo4j import GraphDatabase
 class Neo4jProjectStore:
     def __init__(self, uri: str, user: str, password: str):
         self.driver = GraphDatabase.driver(uri, auth=(user, password))
-    
+
     def upsert_project(self, project: Project) -> None:
         """Insert or update a project node."""
         with self.driver.session() as session:
@@ -428,7 +428,7 @@ class Neo4jProjectStore:
                     p.analyzed_at = $analyzed_at,
                     p.updated_at = $updated_at
             """, project.__dict__)
-    
+
     def upsert_service(self, service: Service) -> None:
         """Insert or update a service node with relationships."""
         with self.driver.session() as session:
@@ -443,7 +443,7 @@ class Neo4jProjectStore:
                     s.language = $language
                 MERGE (p)-[:CONTAINS]->(s)
             """, service.__dict__)
-            
+
             # Create dependency relationships
             for dep_id in service.dependencies:
                 session.run("""
@@ -451,7 +451,7 @@ class Neo4jProjectStore:
                     MATCH (d:Service {id: $dep_id})
                     MERGE (s)-[:DEPENDS_ON]->(d)
                 """, {"service_id": service.id, "dep_id": dep_id})
-    
+
     def get_dependency_graph(self, project_id: str) -> dict:
         """Get full dependency graph for a project."""
         with self.driver.session() as session:
@@ -460,9 +460,9 @@ class Neo4jProjectStore:
                 OPTIONAL MATCH (s)-[:DEPENDS_ON]->(d:Service)
                 RETURN s, collect(d) as dependencies
             """, {"project_id": project_id})
-            
+
             return self._build_graph(result)
-    
+
     def find_affected_services(self, service_id: str) -> list[Service]:
         """Find all services affected by a change to this service."""
         with self.driver.session() as session:
@@ -470,7 +470,7 @@ class Neo4jProjectStore:
                 MATCH (s:Service {id: $service_id})<-[:DEPENDS_ON*]-(affected:Service)
                 RETURN DISTINCT affected
             """, {"service_id": service_id})
-            
+
             return [self._node_to_service(r["affected"]) for r in result]
 ```
 
@@ -482,19 +482,19 @@ class Neo4jProjectStore:
 @tool
 def query_project_knowledge(project_path: str) -> dict:
     """Query stored knowledge about a project.
-    
+
     Args:
         project_path: Absolute path to the project
-        
+
     Returns:
         Project summary including services, tech stack, and deployment history
     """
     store = get_project_store()
     summary = store.get_project_summary(project_path)
-    
+
     if not summary:
         return {"found": False, "message": "Project not analyzed yet"}
-    
+
     return {
         "found": True,
         "project": {
@@ -521,18 +521,18 @@ def save_project_analysis(
     services: list[dict],
 ) -> bool:
     """Save project analysis results to knowledge store.
-    
+
     Args:
         project_path: Absolute path to the project
         description: What this project does
         keypoints: Key observations from analysis
         services: List of services with their details
-        
+
     Returns:
         True if saved successfully
     """
     store = get_project_store()
-    
+
     # Create or update project
     project = Project(
         id=str(uuid.uuid4()),
@@ -544,7 +544,7 @@ def save_project_analysis(
         updated_at=datetime.now(),
     )
     store.upsert_project(project)
-    
+
     # Create services
     for s in services:
         service = Service(
@@ -553,7 +553,7 @@ def save_project_analysis(
             **s
         )
         store.upsert_service(service)
-    
+
     return True
 ```
 
@@ -565,16 +565,16 @@ memory:
   # Agent memory (LangGraph Store)
   agent_store: sqlite  # only sqlite supported
   agent_store_path: ~/.openops/memory.db
-  
+
   # Project knowledge
   project_store: sqlite  # sqlite or neo4j
   project_store_path: ~/.openops/projects.db
-  
+
   # Neo4j settings (if project_store: neo4j)
   neo4j_uri: bolt://localhost:7687
   neo4j_user: neo4j
   neo4j_password: ${OPENOPS_NEO4J_PASSWORD}
-  
+
   # Retention
   conversation_retention_days: 30
   checkpoint_retention_days: 7

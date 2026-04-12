@@ -1,7 +1,5 @@
 """Tests for OpenOps subagent configurations."""
 
-import pytest
-
 from openops.agent.subagents import (
     create_all_subagents,
     create_deploy_agent_config,
@@ -25,7 +23,9 @@ class TestProjectAnalyzerConfig:
         assert config["model"] == "openai:gpt-4o"
 
     def test_with_additional_tools(self):
-        mock_tool = lambda x: x
+        def mock_tool(x):
+            return x
+
         config = create_project_analyzer_config(additional_tools=[mock_tool])
 
         assert len(config["tools"]) == 1
@@ -106,7 +106,9 @@ class TestCreateAllSubagents:
         assert deploy_agent.get("skills") == skill_dirs
 
     def test_analyzer_tools(self):
-        mock_tool = lambda x: x
+        def mock_tool(x):
+            return x
+
         subagents = create_all_subagents(analyzer_tools=[mock_tool])
 
         analyzer = next(s for s in subagents if s["name"] == "project-analyzer")

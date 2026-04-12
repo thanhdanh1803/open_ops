@@ -1,7 +1,6 @@
 """Tests for OpenOps orchestrator agent."""
 
 import os
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -93,7 +92,7 @@ class TestCreateOrchestrator:
         mock_agent = MagicMock()
         mock_create_agent.return_value = mock_agent
 
-        agent = create_orchestrator(
+        _agent = create_orchestrator(
             config=config,
             project_store=mock_store,
         )
@@ -174,7 +173,7 @@ class TestOrchestratorRuntime:
         mock_create_agent.return_value = mock_agent
 
         runtime = OrchestratorRuntime(config=config, project_store=mock_store)
-        result = runtime.invoke("Hello", thread_id="test-thread")
+        _result = runtime.invoke("Hello", thread_id="test-thread")
 
         mock_agent.invoke.assert_called_once()
         call_args = mock_agent.invoke.call_args

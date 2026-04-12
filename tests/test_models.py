@@ -2,8 +2,6 @@
 
 from datetime import datetime
 
-import pytest
-
 from openops.models import (
     Deployment,
     MonitoringConfig,

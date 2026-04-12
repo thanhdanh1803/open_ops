@@ -151,9 +151,7 @@ class TestProjectOperations:
         result = store.delete_project("nonexistent-id")
         assert result is False
 
-    def test_delete_project_cascades_to_services(
-        self, store, sample_project, sample_service
-    ):
+    def test_delete_project_cascades_to_services(self, store, sample_project, sample_service):
         store.upsert_project(sample_project)
         store.upsert_service(sample_service)
 
@@ -385,9 +383,7 @@ class TestServiceDependencies:
 
 
 class TestDeploymentOperations:
-    def test_add_and_get_deployment(
-        self, store, sample_project, sample_service, sample_deployment
-    ):
+    def test_add_and_get_deployment(self, store, sample_project, sample_service, sample_deployment):
         store.upsert_project(sample_project)
         store.upsert_service(sample_service)
         store.add_deployment(sample_deployment)
@@ -408,9 +404,7 @@ class TestDeploymentOperations:
 
         assert result is None
 
-    def test_new_deployment_supersedes_old(
-        self, store, sample_project, sample_service, sample_deployment
-    ):
+    def test_new_deployment_supersedes_old(self, store, sample_project, sample_service, sample_deployment):
         store.upsert_project(sample_project)
         store.upsert_service(sample_service)
         store.add_deployment(sample_deployment)
@@ -435,9 +429,7 @@ class TestDeploymentOperations:
         old_deployment = next(d for d in all_deployments if d.id == "deploy-123")
         assert old_deployment.status == "superseded"
 
-    def test_get_deployments_for_service(
-        self, store, sample_project, sample_service, sample_deployment
-    ):
+    def test_get_deployments_for_service(self, store, sample_project, sample_service, sample_deployment):
         store.upsert_project(sample_project)
         store.upsert_service(sample_service)
 
@@ -465,9 +457,7 @@ class TestDeploymentOperations:
         assert deployments[0].id == "deploy-2"
         assert deployments[1].id == "deploy-1"
 
-    def test_get_deployments_for_service_empty(
-        self, store, sample_project, sample_service
-    ):
+    def test_get_deployments_for_service_empty(self, store, sample_project, sample_service):
         store.upsert_project(sample_project)
         store.upsert_service(sample_service)
 
@@ -475,9 +465,7 @@ class TestDeploymentOperations:
 
         assert deployments == []
 
-    def test_delete_service_cascades_to_deployments(
-        self, store, sample_project, sample_service, sample_deployment
-    ):
+    def test_delete_service_cascades_to_deployments(self, store, sample_project, sample_service, sample_deployment):
         store.upsert_project(sample_project)
         store.upsert_service(sample_service)
         store.add_deployment(sample_deployment)
@@ -489,9 +477,7 @@ class TestDeploymentOperations:
 
 
 class TestProjectSummary:
-    def test_get_project_summary(
-        self, store, sample_project, sample_service, sample_deployment
-    ):
+    def test_get_project_summary(self, store, sample_project, sample_service, sample_deployment):
         store.upsert_project(sample_project)
         store.upsert_service(sample_service)
         store.add_deployment(sample_deployment)
@@ -508,9 +494,7 @@ class TestProjectSummary:
         summary = store.get_project_summary("/nonexistent/path")
         assert summary is None
 
-    def test_get_project_summary_no_deployments(
-        self, store, sample_project, sample_service
-    ):
+    def test_get_project_summary_no_deployments(self, store, sample_project, sample_service):
         store.upsert_project(sample_project)
         store.upsert_service(sample_service)
 

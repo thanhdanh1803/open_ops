@@ -149,26 +149,26 @@ logger = logging.getLogger(__name__)
 
 class MyPlatformSkill(BaseSkill):
     """Skill for deploying to MyPlatform."""
-    
+
     name = "my-platform-deploy"
     description = "Deploy applications to MyPlatform"
     risk_level = "write"
-    
+
     def __init__(self, token: str | None = None):
         self.token = token or os.getenv("MYPLATFORM_TOKEN")
         self.base_url = "https://api.myplatform.com/v1"
-    
+
     def validate_credentials(self) -> bool:
         """Check if credentials are configured."""
         return self.token is not None
-    
+
     def get_tools(self) -> list:
         """Return tools provided by this skill."""
         return [
             self._create_deploy_tool(),
             self._create_list_projects_tool(),
         ]
-    
+
     def _create_deploy_tool(self):
         @tool
         def myplatform_deploy(
@@ -177,17 +177,17 @@ class MyPlatformSkill(BaseSkill):
             environment: str = "preview",
         ) -> SkillResult:
             """Deploy a project to MyPlatform.
-            
+
             Args:
                 project_path: Path to the project directory
                 project_name: Name for the deployment
                 environment: Target environment (preview or production)
-                
+
             Returns:
                 Deployment result with URL and status
             """
             logger.info(f"Deploying {project_name} to MyPlatform")
-            
+
             if not self.validate_credentials():
                 logger.error("MyPlatform credentials not configured")
                 return SkillResult(
@@ -195,7 +195,7 @@ class MyPlatformSkill(BaseSkill):
                     message="MyPlatform token not configured",
                     error="MISSING_CREDENTIALS"
                 )
-            
+
             try:
                 # Create deployment
                 response = httpx.post(
@@ -209,12 +209,12 @@ class MyPlatformSkill(BaseSkill):
                 )
                 response.raise_for_status()
                 data = response.json()
-                
+
                 logger.info(f"Deployment created: {data['id']}")
-                
+
                 # Poll for completion (simplified)
                 # In real implementation, poll until ready
-                
+
                 return SkillResult(
                     success=True,
                     message=f"Deployed to MyPlatform",
@@ -224,7 +224,7 @@ class MyPlatformSkill(BaseSkill):
                         "status": data["status"],
                     }
                 )
-                
+
             except httpx.HTTPStatusError as e:
                 logger.error(f"Deployment failed: {e}")
                 return SkillResult(
@@ -239,9 +239,9 @@ class MyPlatformSkill(BaseSkill):
                     message=f"Deployment failed: {e}",
                     error=str(e)
                 )
-        
+
         return myplatform_deploy
-    
+
     def _create_list_projects_tool(self):
         @tool
         def myplatform_list_projects() -> SkillResult:
@@ -252,14 +252,14 @@ class MyPlatformSkill(BaseSkill):
                     message="Credentials not configured",
                     error="MISSING_CREDENTIALS"
                 )
-            
+
             try:
                 response = httpx.get(
                     f"{self.base_url}/projects",
                     headers={"Authorization": f"Bearer {self.token}"},
                 )
                 response.raise_for_status()
-                
+
                 return SkillResult(
                     success=True,
                     message="Projects retrieved",
@@ -271,7 +271,7 @@ class MyPlatformSkill(BaseSkill):
                     message=str(e),
                     error=str(e)
                 )
-        
+
         return myplatform_list_projects
 ```
 
@@ -316,11 +316,11 @@ def skill():
 class TestMyPlatformSkill:
     def test_validate_credentials(self, skill):
         assert skill.validate_credentials() is True
-    
+
     def test_validate_credentials_missing(self):
         skill = MyPlatformSkill(token=None)
         assert skill.validate_credentials() is False
-    
+
     @patch("httpx.post")
     def test_deploy_success(self, mock_post, skill):
         mock_post.return_value = Mock(
@@ -331,13 +331,13 @@ class TestMyPlatformSkill:
                 "status": "ready",
             }
         )
-        
+
         deploy_tool = skill.get_tools()[0]
         result = deploy_tool.invoke({
             "project_path": "/test",
             "project_name": "test-app",
         })
-        
+
         assert result.success is True
         assert "myplatform.com" in result.data["url"]
 ```
@@ -384,13 +384,13 @@ logger.debug(f"Config: {config}")
 # Document public functions
 def analyze_project(path: str) -> ProjectAnalysis:
     """Analyze a project's structure for deployment.
-    
+
     Args:
         path: Absolute path to the project root
-        
+
     Returns:
         ProjectAnalysis with detected services and tech stack
-        
+
     Raises:
         ValueError: If path doesn't exist
     """

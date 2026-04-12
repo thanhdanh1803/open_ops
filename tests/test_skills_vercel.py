@@ -1,13 +1,10 @@
 """Tests for the Vercel deployment skill."""
 
-import json
 from unittest.mock import patch
 
 import httpx
-import pytest
 
-from openops.exceptions import PlatformAPIError
-from openops.models import RiskLevel, SkillResult
+from openops.models import RiskLevel
 from openops.skills.vercel import VercelSkill
 
 
@@ -163,10 +160,12 @@ class TestVercelDeploy:
         tools = skill.get_tools()
         deploy_tool = next(t for t in tools if t.name == "vercel_deploy")
 
-        result = deploy_tool.invoke({
-            "project_name": "my-app",
-            "git_repo": "https://github.com/user/repo",
-        })
+        result = deploy_tool.invoke(
+            {
+                "project_name": "my-app",
+                "git_repo": "https://github.com/user/repo",
+            }
+        )
 
         assert result.success is True
         assert "deployment_id" in result.data
@@ -201,10 +200,12 @@ class TestVercelDeploy:
         tools = skill.get_tools()
         deploy_tool = next(t for t in tools if t.name == "vercel_deploy")
 
-        result = deploy_tool.invoke({
-            "project_name": "new-app",
-            "git_repo": "https://github.com/user/new-repo",
-        })
+        result = deploy_tool.invoke(
+            {
+                "project_name": "new-app",
+                "git_repo": "https://github.com/user/new-repo",
+            }
+        )
 
         assert result.success is True
 
@@ -213,9 +214,11 @@ class TestVercelDeploy:
         tools = skill.get_tools()
         deploy_tool = next(t for t in tools if t.name == "vercel_deploy")
 
-        result = deploy_tool.invoke({
-            "project_name": "my-app",
-        })
+        result = deploy_tool.invoke(
+            {
+                "project_name": "my-app",
+            }
+        )
 
         assert result.success is False
         assert result.error == "MISSING_CREDENTIALS"
@@ -277,10 +280,12 @@ class TestVercelGetDeployments:
         tools = skill.get_tools()
         get_deployments_tool = next(t for t in tools if t.name == "vercel_get_deployments")
 
-        result = get_deployments_tool.invoke({
-            "project_name": "my-app",
-            "state": "READY",
-        })
+        result = get_deployments_tool.invoke(
+            {
+                "project_name": "my-app",
+                "state": "READY",
+            }
+        )
 
         assert result.success is True
 

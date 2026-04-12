@@ -64,7 +64,11 @@ class RailwaySkill(BaseSkill):
             risk_level=self.risk_level,
             tags=["deployment", "backend", "railway", "database", "infrastructure"],
             requires_credentials=["OPENOPS_RAILWAY_TOKEN"],
-            provides_tools=["railway_deploy", "railway_list_projects", "railway_list_services"],
+            provides_tools=[
+                "railway_deploy",
+                "railway_list_projects",
+                "railway_list_services",
+            ],
         )
 
     def get_skill_instructions(self) -> str | None:
@@ -124,10 +128,10 @@ class RailwaySkill(BaseSkill):
             error_body = e.response.json() if e.response.content else {}
             error_message = error_body.get("message", str(e))
             logger.error(f"Railway API error: {error_message}")
-            raise PlatformAPIError("railway", error_message, e.response.status_code)
+            raise PlatformAPIError("railway", error_message, e.response.status_code) from e
         except httpx.RequestError as e:
             logger.error(f"Railway request error: {e}")
-            raise PlatformAPIError("railway", f"Request failed: {e}")
+            raise PlatformAPIError("railway", f"Request failed: {e}") from e
 
     def _create_deploy_tool(self):
         """Create the railway_deploy tool."""
@@ -465,14 +469,16 @@ class RailwaySkill(BaseSkill):
                     deployments = node.get("deployments", {}).get("edges", [])
                     latest_deployment = deployments[0]["node"] if deployments else None
 
-                    services.append({
-                        "id": node["id"],
-                        "name": node["name"],
-                        "updated_at": node.get("updatedAt"),
-                        "status": latest_deployment.get("status") if latest_deployment else "NO_DEPLOYMENT",
-                        "url": latest_deployment.get("url") if latest_deployment else None,
-                        "dashboard_url": f"https://railway.app/project/{project_id}/service/{node['id']}",
-                    })
+                    services.append(
+                        {
+                            "id": node["id"],
+                            "name": node["name"],
+                            "updated_at": node.get("updatedAt"),
+                            "status": latest_deployment.get("status") if latest_deployment else "NO_DEPLOYMENT",
+                            "url": latest_deployment.get("url") if latest_deployment else None,
+                            "dashboard_url": f"https://railway.app/project/{project_id}/service/{node['id']}",
+                        }
+                    )
 
                 logger.info(f"Listed {len(services)} services for project {project_id}")
                 return SkillResult(

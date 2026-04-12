@@ -125,7 +125,7 @@ Get recent deployments for a project.
 
 Vercel environment variables can be scoped to:
 - `production`: Only production deployments
-- `preview`: Only preview/staging deployments  
+- `preview`: Only preview/staging deployments
 - `development`: Local development with `vercel dev`
 
 Set all three targets for variables needed everywhere.

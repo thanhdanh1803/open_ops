@@ -52,32 +52,32 @@ class MonitorDaemon:
         self.config = load_config(config_path)
         self.pid_file = Path("~/.openops/daemon.pid").expanduser()
         self.running = False
-        
+
     def start(self):
         """Start the daemon process."""
         if self.is_running():
             raise DaemonError("Daemon already running")
-        
+
         # Daemonize
         pid = os.fork()
         if pid > 0:
             # Parent exits
             return
-        
+
         # Child continues as daemon
         self._write_pid()
         self.running = True
         self._run_loop()
-    
+
     def stop(self):
         """Stop the daemon process."""
         if not self.is_running():
             return
-            
+
         pid = self._read_pid()
         os.kill(pid, signal.SIGTERM)
         self.pid_file.unlink()
-    
+
     def is_running(self) -> bool:
         """Check if daemon is running."""
         if not self.pid_file.exists():
@@ -88,20 +88,20 @@ class MonitorDaemon:
             return True
         except OSError:
             return False
-    
+
     def _run_loop(self):
         """Main daemon loop."""
         scheduler = BackgroundScheduler()
-        
+
         # Schedule periodic checks
         scheduler.add_job(
             self._check_all_services,
             'interval',
             seconds=self.config.monitoring.interval,
         )
-        
+
         scheduler.start()
-        
+
         # Keep running until stopped
         while self.running:
             time.sleep(1)
@@ -205,7 +205,7 @@ class LogEntry:
     message: str
     source: str  # service name
     metadata: dict | None = None
-    
+
     @classmethod
     def from_vercel(cls, event: dict) -> "LogEntry":
         return cls(
@@ -235,23 +235,23 @@ class HealthChecker:
             "response_time_warning": 1000,  # ms
             "response_time_critical": 5000,  # ms
         }
-    
+
     async def check(self, url: str) -> HealthStatus:
         """Check health of a service endpoint."""
         start = time.monotonic()
-        
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.get(url)
-                
+
             elapsed = (time.monotonic() - start) * 1000
-            
+
             return HealthStatus(
                 healthy=response.status_code < 400,
                 response_time_ms=int(elapsed),
                 status_code=response.status_code,
             )
-            
+
         except httpx.TimeoutException:
             return HealthStatus(
                 healthy=False,
@@ -299,11 +299,11 @@ ERROR_PATTERNS = {
 def analyze_error_pattern(log_entries: list[LogEntry]) -> list[dict]:
     """Analyze logs for known error patterns."""
     findings = []
-    
+
     for entry in log_entries:
         if entry.level != "error":
             continue
-            
+
         for error_type, patterns in ERROR_PATTERNS.items():
             for pattern in patterns:
                 if re.search(pattern, entry.message, re.IGNORECASE):
@@ -313,7 +313,7 @@ def analyze_error_pattern(log_entries: list[LogEntry]) -> list[dict]:
                         "pattern": pattern,
                     })
                     break
-    
+
     return findings
 ```
 
@@ -327,7 +327,7 @@ async def analyze_with_llm(
     context: dict,
 ) -> str:
     """Use LLM to analyze error logs."""
-    
+
     prompt = f"""Analyze these error logs from a deployed service:
 
 Service: {context['service_name']}
@@ -343,11 +343,11 @@ Provide:
 3. Suggested fix
 4. Whether this requires immediate attention
 """
-    
+
     response = await monitor_agent.invoke({
         "messages": [{"role": "user", "content": prompt}]
     })
-    
+
     return response["messages"][-1].content
 ```
 
@@ -360,7 +360,7 @@ Provide:
 monitoring:
   enabled: true
   interval: 60  # seconds
-  
+
   alerts:
     slack:
       enabled: true
@@ -368,14 +368,14 @@ monitoring:
       channels:
         critical: "#alerts-critical"
         warning: "#alerts-warning"
-        
+
     email:
       enabled: false
       smtp_host: smtp.example.com
       from: openops@example.com
       to:
         - team@example.com
-        
+
   thresholds:
     response_time_warning: 1000  # ms
     response_time_critical: 5000
@@ -398,22 +398,22 @@ class Alert:
 class AlertDispatcher:
     def __init__(self, config: dict):
         self.channels = self._setup_channels(config)
-    
+
     async def dispatch(self, alert: Alert):
         """Send alert to configured channels."""
         for channel in self.channels:
             if channel.should_send(alert):
                 await channel.send(alert)
-    
+
     def _setup_channels(self, config: dict) -> list:
         channels = []
-        
+
         if config.get("slack", {}).get("enabled"):
             channels.append(SlackChannel(config["slack"]))
-            
+
         if config.get("email", {}).get("enabled"):
             channels.append(EmailChannel(config["email"]))
-        
+
         return channels
 
 class SlackChannel:
@@ -424,7 +424,7 @@ class SlackChannel:
             "warning": "#ffcc00",
             "critical": "#ff0000",
         }[alert.severity]
-        
+
         payload = {
             "attachments": [{
                 "color": color,
@@ -436,7 +436,7 @@ class SlackChannel:
                 ],
             }]
         }
-        
+
         await httpx.post(self.webhook_url, json=payload)
 ```
 
@@ -449,17 +449,17 @@ When errors are detected, OpenOps can suggest or trigger fixes:
 ```python
 async def suggest_fix(error_analysis: dict, project_path: str):
     """Suggest or trigger a fix for an error."""
-    
+
     # Option 1: Show suggestion in CLI (if running)
     if cli_session_active():
         show_fix_suggestion(error_analysis)
         return
-    
+
     # Option 2: Trigger Cursor CLI
     if config.auto_fix.cursor_enabled:
         await trigger_cursor_fix(error_analysis, project_path)
         return
-    
+
     # Option 3: Send alert with fix instructions
     await dispatch_alert(Alert(
         severity="warning",
@@ -488,7 +488,7 @@ Root cause: {error_analysis['root_cause']}
 
 Suggested approach: {error_analysis['suggested_fix']}
 """
-    
+
     # Run Cursor CLI with the fix prompt
     subprocess.run([
         "cursor", "--command",
@@ -506,7 +506,7 @@ class MonitoringStore:
     def __init__(self, db_path: str = "~/.openops/monitoring.db"):
         self.db = sqlite3.connect(Path(db_path).expanduser())
         self._init_schema()
-    
+
     def _init_schema(self):
         self.db.execute("""
             CREATE TABLE IF NOT EXISTS health_checks (
@@ -519,7 +519,7 @@ class MonitoringStore:
                 error TEXT
             )
         """)
-        
+
         self.db.execute("""
             CREATE TABLE IF NOT EXISTS alerts (
                 id INTEGER PRIMARY KEY,
@@ -531,7 +531,7 @@ class MonitoringStore:
                 acknowledged BOOLEAN DEFAULT FALSE
             )
         """)
-    
+
     def save_health_check(self, service_id: str, status: HealthStatus):
         self.db.execute(
             "INSERT INTO health_checks VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -539,7 +539,7 @@ class MonitoringStore:
              status.response_time_ms, status.status_code, status.error)
         )
         self.db.commit()
-    
+
     def get_health_history(
         self,
         service_id: str,

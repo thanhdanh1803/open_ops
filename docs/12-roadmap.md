@@ -55,7 +55,7 @@ The current codebase has basic foundations but needs significant work:
    - Next.js apps to Vercel
    - FastAPI apps to Railway
    - Static sites to Render
-   
+
 2. Interactive TUI experience
 3. Basic documentation
 

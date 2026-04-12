@@ -61,12 +61,12 @@ class BaseSkill(ABC):
     name: str
     description: str
     risk_level: RiskLevel
-    
+
     @abstractmethod
     def get_tools(self) -> list:
         """Return LangChain tools provided by this skill."""
         pass
-    
+
     def validate_credentials(self) -> bool:
         """Check if required credentials are available."""
         return True
@@ -82,16 +82,16 @@ Reference: [03-skills.md](./03-skills.md) for full skill architecture.
 class ProjectStoreBase(ABC):
     @abstractmethod
     def upsert_project(self, project: Project) -> None: ...
-    
+
     @abstractmethod
     def get_project(self, path: str) -> Project | None: ...
-    
+
     @abstractmethod
     def upsert_service(self, service: Service) -> None: ...
-    
+
     @abstractmethod
     def get_services_for_project(self, project_id: str) -> list[Service]: ...
-    
+
     @abstractmethod
     def add_deployment(self, deployment: Deployment) -> None: ...
 ```
@@ -155,8 +155,8 @@ Once Phase 0 is complete, these 5 tracks can be developed **simultaneously** by 
 
 ## Track A: Agent/Orchestrator
 
-**Owner**: 1 developer  
-**Dependencies**: Phase 0 models, base classes  
+**Owner**: 1 developer
+**Dependencies**: Phase 0 models, base classes
 **Reference**: [02-agents.md](./02-agents.md)
 
 ### Files to Create
@@ -185,8 +185,8 @@ Once Phase 0 is complete, these 5 tracks can be developed **simultaneously** by 
 
 ## Track B: Memory/Storage
 
-**Owner**: 1 developer  
-**Dependencies**: Phase 0 storage interfaces, models  
+**Owner**: 1 developer
+**Dependencies**: Phase 0 storage interfaces, models
 **Reference**: [08-memory.md](./08-memory.md)
 
 ### Files to Create
@@ -247,8 +247,8 @@ CREATE TABLE deployments (
 
 ## Track C: Deployment Skills
 
-**Owner**: 1-2 developers (can split by platform)  
-**Dependencies**: Phase 0 BaseSkill, SkillResult  
+**Owner**: 1-2 developers (can split by platform)
+**Dependencies**: Phase 0 BaseSkill, SkillResult
 **Reference**: [03-skills.md](./03-skills.md)
 
 ### Files to Create
@@ -284,8 +284,8 @@ CREATE TABLE deployments (
 
 ## Track D: CLI/TUI
 
-**Owner**: 1 developer  
-**Dependencies**: Phase 0 config only (can use stub agent initially)  
+**Owner**: 1 developer
+**Dependencies**: Phase 0 config only (can use stub agent initially)
 **Reference**: [04-cli-and-tui.md](./04-cli-and-tui.md)
 
 ### Files to Create
@@ -323,8 +323,8 @@ CREATE TABLE deployments (
 
 ## Track E: Project Analysis
 
-**Owner**: 1 developer  
-**Dependencies**: Phase 0 models (Service, Project)  
+**Owner**: 1 developer
+**Dependencies**: Phase 0 models (Service, Project)
 **Reference**: [05-project-analysis.md](./05-project-analysis.md)
 
 ### Files to Create
@@ -385,17 +385,17 @@ def create_runtime(config: OpenOpsConfig) -> OpenOpsRuntime:
     # Storage
     store = SqliteProjectStore(config.data_dir / "projects.db")
     checkpointer = SqliteSaver(config.data_dir / "checkpoints.db")
-    
+
     # Skills
     skills = [
         VercelSkill(token=config.vercel_token),
         RailwaySkill(token=config.railway_token),
         RenderSkill(api_key=config.render_api_key),
     ]
-    
+
     # Agent
     orchestrator = create_orchestrator(config, store, checkpointer, skills)
-    
+
     return OpenOpsRuntime(orchestrator, store, config)
 ```
 

@@ -12,7 +12,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from openops.models import Deployment, Project, Service, SkillResult
+from openops.models import Deployment, Project, Service
 from openops.storage.base import ProjectStoreBase
 
 logger = logging.getLogger(__name__)
@@ -64,9 +64,7 @@ def create_project_knowledge_tools(
         project: Project = summary["project"]
         services_data = summary["services"]
 
-        logger.info(
-            f"Found project '{project.name}' with {len(services_data)} services"
-        )
+        logger.info(f"Found project '{project.name}' with {len(services_data)} services")
 
         return {
             "found": True,
@@ -76,9 +74,7 @@ def create_project_knowledge_tools(
                 "path": project.path,
                 "description": project.description,
                 "keypoints": project.keypoints,
-                "analyzed_at": (
-                    project.analyzed_at.isoformat() if project.analyzed_at else None
-                ),
+                "analyzed_at": (project.analyzed_at.isoformat() if project.analyzed_at else None),
             },
             "services": [
                 {
@@ -194,9 +190,7 @@ def create_project_knowledge_tools(
             service_ids.append(service_id)
             logger.debug(f"Saved service '{service.name}' with ID: {service_id}")
 
-        logger.info(
-            f"Saved project '{project_name}' with {len(service_ids)} services"
-        )
+        logger.info(f"Saved project '{project_name}' with {len(service_ids)} services")
 
         return {
             "success": True,

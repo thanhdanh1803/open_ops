@@ -64,7 +64,11 @@ class VercelSkill(BaseSkill):
             risk_level=self.risk_level,
             tags=["deployment", "frontend", "vercel", "serverless"],
             requires_credentials=["OPENOPS_VERCEL_TOKEN"],
-            provides_tools=["vercel_deploy", "vercel_list_projects", "vercel_get_deployments"],
+            provides_tools=[
+                "vercel_deploy",
+                "vercel_list_projects",
+                "vercel_get_deployments",
+            ],
         )
 
     def get_skill_instructions(self) -> str | None:
@@ -122,10 +126,10 @@ class VercelSkill(BaseSkill):
             error_body = e.response.json() if e.response.content else {}
             error_message = error_body.get("error", {}).get("message", str(e))
             logger.error(f"Vercel API error: {error_message}")
-            raise PlatformAPIError("vercel", error_message, e.response.status_code)
+            raise PlatformAPIError("vercel", error_message, e.response.status_code) from e
         except httpx.RequestError as e:
             logger.error(f"Vercel request error: {e}")
-            raise PlatformAPIError("vercel", f"Request failed: {e}")
+            raise PlatformAPIError("vercel", f"Request failed: {e}") from e
 
     def _create_deploy_tool(self):
         """Create the vercel_deploy tool."""

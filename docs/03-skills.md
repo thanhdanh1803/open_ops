@@ -162,16 +162,16 @@ class SkillResult(BaseModel):
 
 class BaseSkill(ABC):
     """Base class for OpenOps skills."""
-    
+
     name: str
     description: str
     risk_level: str  # "read", "write", "destructive"
-    
+
     @abstractmethod
     def get_tools(self) -> list:
         """Return LangChain tools provided by this skill."""
         pass
-    
+
     def validate_credentials(self) -> bool:
         """Check if required credentials are available."""
         return True
@@ -188,21 +188,21 @@ class VercelSkill(BaseSkill):
     name = "vercel-deploy"
     description = "Deploy applications to Vercel"
     risk_level = "write"
-    
+
     def __init__(self, token: str | None = None):
         self.token = token or os.getenv("VERCEL_TOKEN")
         self.base_url = "https://api.vercel.com"
-    
+
     def validate_credentials(self) -> bool:
         return self.token is not None
-    
+
     def get_tools(self) -> list:
         return [
             self._create_deploy_tool(),
             self._create_list_projects_tool(),
             self._create_get_deployments_tool(),
         ]
-    
+
     def _create_deploy_tool(self):
         @tool
         def vercel_deploy(
@@ -211,12 +211,12 @@ class VercelSkill(BaseSkill):
             production: bool = False,
         ) -> SkillResult:
             """Deploy a project to Vercel.
-            
+
             Args:
                 project_path: Path to the project directory
                 project_name: Name for the Vercel project
                 production: Deploy to production (default: staging)
-                
+
             Returns:
                 Deployment result with URL and status
             """
@@ -226,7 +226,7 @@ class VercelSkill(BaseSkill):
                     message="Vercel token not configured",
                     error="MISSING_CREDENTIALS"
                 )
-            
+
             # Implementation using Vercel API
             try:
                 response = httpx.post(
@@ -240,7 +240,7 @@ class VercelSkill(BaseSkill):
                 )
                 response.raise_for_status()
                 data = response.json()
-                
+
                 return SkillResult(
                     success=True,
                     message=f"Deployed successfully",
@@ -256,9 +256,9 @@ class VercelSkill(BaseSkill):
                     message=f"Deployment failed: {e}",
                     error=str(e)
                 )
-        
+
         return vercel_deploy
-    
+
     def _create_list_projects_tool(self):
         @tool
         def vercel_list_projects() -> SkillResult:
@@ -266,12 +266,12 @@ class VercelSkill(BaseSkill):
             # Implementation
             pass
         return vercel_list_projects
-    
+
     def _create_get_deployments_tool(self):
         @tool
         def vercel_get_deployments(project_name: str, limit: int = 10) -> SkillResult:
             """Get recent deployments for a project.
-            
+
             Args:
                 project_name: Name of the Vercel project
                 limit: Number of deployments to fetch

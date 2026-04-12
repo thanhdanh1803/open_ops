@@ -20,7 +20,7 @@ export default function Home() {
     <main style={{ padding: '2rem', fontFamily: 'system-ui' }}>
       <h1>Mock Frontend</h1>
       <p>This is a sample Next.js application for testing OpenOps.</p>
-      
+
       <h2>Backend Status</h2>
       {error && <p style={{ color: 'red' }}>Error: {error}</p>}
       {health && (

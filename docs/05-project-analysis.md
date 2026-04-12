@@ -26,7 +26,7 @@ ROOT_INDICATORS = {
     "lerna.json": "lerna_monorepo",
     "nx.json": "nx_monorepo",
     "turbo.json": "turborepo",
-    
+
     # Single project indicators
     "package.json": "node_project",
     "pyproject.toml": "python_project",
@@ -34,7 +34,7 @@ ROOT_INDICATORS = {
     "go.mod": "go_project",
     "pom.xml": "java_maven",
     "build.gradle": "java_gradle",
-    
+
     # Deployment configs (already exists)
     "Dockerfile": "has_docker",
     "docker-compose.yml": "has_compose",
@@ -101,14 +101,14 @@ def is_monorepo(project_path: str) -> bool:
     """Check if project is a monorepo."""
     monorepo_markers = [
         "pnpm-workspace.yaml",
-        "lerna.json", 
+        "lerna.json",
         "nx.json",
         "turbo.json",
         "packages/",
         "apps/",
     ]
     return any(
-        (Path(project_path) / marker).exists() 
+        (Path(project_path) / marker).exists()
         for marker in monorepo_markers
     )
 ```
@@ -119,11 +119,11 @@ def is_monorepo(project_path: str) -> bool:
 def discover_services(project_path: str) -> list[ServiceInfo]:
     """Discover all services in a monorepo."""
     services = []
-    
+
     # Check common monorepo structures
     service_dirs = [
         "apps/*",
-        "packages/*", 
+        "packages/*",
         "services/*",
         "frontend",
         "backend",
@@ -131,14 +131,14 @@ def discover_services(project_path: str) -> list[ServiceInfo]:
         "web",
         "worker",
     ]
-    
+
     for pattern in service_dirs:
         for path in Path(project_path).glob(pattern):
             if path.is_dir():
                 service = analyze_service(path)
                 if service:
                     services.append(service)
-    
+
     return services
 ```
 
@@ -151,7 +151,7 @@ DATABASE_INDICATORS = {
     "drizzle.config.ts": {"type": "drizzle", "db": "from_config"},
     "alembic/": {"type": "sqlalchemy", "db": "from_env"},
     "migrations/": {"type": "generic_migration"},
-    
+
     # Direct database clients
     "pg": "postgresql",  # package.json dep
     "mysql2": "mysql",
@@ -168,13 +168,13 @@ DATABASE_INDICATORS = {
 def extract_env_vars(project_path: str) -> list[dict]:
     """Extract required environment variables."""
     env_vars = []
-    
+
     # Check .env.example, .env.sample, .env.template
     for env_file in [".env.example", ".env.sample", ".env.template"]:
         path = Path(project_path) / env_file
         if path.exists():
             env_vars.extend(parse_env_file(path))
-    
+
     # Check for env usage in code
     # This is a shallow check - just looking for common patterns
     patterns = [
@@ -183,13 +183,13 @@ def extract_env_vars(project_path: str) -> list[dict]:
         r"os\.getenv\(['\"](\w+)['\"]",  # Python
         r"env::var\(['\"](\w+)['\"]",  # Rust
     ]
-    
+
     # Scan entry point files only (shallow)
     entry_points = ["app.py", "main.py", "index.ts", "server.ts"]
     for entry in entry_points:
         # Extract env var names
         pass
-    
+
     return env_vars
 ```
 
@@ -198,7 +198,7 @@ def extract_env_vars(project_path: str) -> list[dict]:
 ### Project Summary
 
 ```python
-@dataclass  
+@dataclass
 class ProjectAnalysis:
     path: str
     name: str
@@ -278,18 +278,18 @@ Analysis results are cached to avoid re-scanning:
 def get_or_analyze_project(project_path: str) -> ProjectAnalysis:
     """Get cached analysis or run new analysis."""
     cache_key = get_cache_key(project_path)
-    
+
     # Check if cached and still valid
     cached = memory_store.get(cache_key)
     if cached and is_cache_valid(cached, project_path):
         return cached
-    
+
     # Run fresh analysis
     analysis = analyze_project(project_path)
-    
+
     # Cache result
     memory_store.set(cache_key, analysis)
-    
+
     return analysis
 
 def is_cache_valid(cached: ProjectAnalysis, project_path: str) -> bool:
@@ -317,7 +317,7 @@ async def save_analysis_to_memory(analysis: ProjectAnalysis):
         description=analysis.description,
         keypoints=analysis.keypoints,
     )
-    
+
     for service in analysis.services:
         project_store.upsert_service(
             project_path=analysis.path,
@@ -334,10 +334,10 @@ The Project Analyzer subagent uses these tools:
 @tool
 def analyze_project(project_path: str) -> ProjectAnalysis:
     """Analyze a project's structure for deployment.
-    
+
     Args:
         project_path: Path to the project root
-        
+
     Returns:
         Comprehensive project analysis
     """
@@ -346,26 +346,26 @@ def analyze_project(project_path: str) -> ProjectAnalysis:
 @tool
 def detect_framework(directory: str) -> dict:
     """Detect the framework used in a directory.
-    
+
     Args:
         directory: Path to check
-        
+
     Returns:
         Framework info with confidence score
     """
     pass
 
-@tool  
+@tool
 def find_missing_configs(
     project_path: str,
     target_platform: str,
 ) -> list[str]:
     """Find missing configuration files for a platform.
-    
+
     Args:
         project_path: Path to project
         target_platform: Target deployment platform
-        
+
     Returns:
         List of missing config files
     """

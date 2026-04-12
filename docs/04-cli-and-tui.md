@@ -168,41 +168,41 @@ class OpenOpsTUI:
         self.console = Console()
         self.project_path = project_path or os.getcwd()
         self.history: list[str] = []
-        
+
     def run(self):
         """Main TUI loop."""
         self._show_header()
-        
+
         while True:
             try:
                 user_input = self._get_input()
                 if user_input.lower() in ("exit", "quit", "q"):
                     break
-                    
+
                 self._process_message(user_input)
-                
+
             except KeyboardInterrupt:
                 break
-                
+
         self._show_goodbye()
-    
+
     def _show_header(self):
         self.console.print(Panel(
             f"[bold blue]OpenOps[/bold blue] v0.1.0\n"
             f"Project: {self.project_path}",
             title="Welcome",
         ))
-    
+
     def _get_input(self) -> str:
         return Prompt.ask("[bold green]You[/bold green]")
-    
+
     def _process_message(self, message: str):
         # Show thinking indicator
         with Live(Spinner("dots", text="Thinking..."), refresh_per_second=10):
             response = self.agent.invoke({
                 "messages": [{"role": "user", "content": message}]
             }, config=self.config)
-        
+
         # Display response
         content = response["messages"][-1].content
         self.console.print(Panel(
@@ -210,11 +210,11 @@ class OpenOpsTUI:
             title="[bold blue]OpenOps[/bold blue]",
             border_style="blue",
         ))
-    
+
     def _show_progress(self, tasks: list[dict]):
         """Show progress for multi-step operations."""
         from rich.progress import Progress, SpinnerColumn, TextColumn
-        
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -317,7 +317,7 @@ tui:
 cli:
   output_format: rich     # rich, json, plain
   color: auto             # auto, always, never
-  
+
 defaults:
   platform: vercel        # Default deployment platform
   dry_run: false

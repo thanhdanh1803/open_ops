@@ -1,13 +1,10 @@
 """Tests for the Render deployment skill."""
 
-import json
 from unittest.mock import patch
 
 import httpx
-import pytest
 
-from openops.exceptions import PlatformAPIError
-from openops.models import RiskLevel, SkillResult
+from openops.models import RiskLevel
 from openops.skills.render import RenderSkill
 
 
@@ -18,7 +15,7 @@ def create_mock_transport(responses: dict[str, httpx.Response]) -> httpx.MockTra
         path = request.url.path
         method = request.method
 
-        key = f"{method} {path}"
+        _key = f"{method} {path}"
 
         for pattern, response in responses.items():
             pattern_method, pattern_path = pattern.split(" ", 1) if " " in pattern else ("", pattern)
@@ -198,11 +195,13 @@ class TestRenderDeploy:
         tools = skill.get_tools()
         deploy_tool = next(t for t in tools if t.name == "render_deploy")
 
-        result = deploy_tool.invoke({
-            "service_name": "my-new-api",
-            "service_type": "web_service",
-            "git_repo": "https://github.com/user/repo",
-        })
+        result = deploy_tool.invoke(
+            {
+                "service_name": "my-new-api",
+                "service_type": "web_service",
+                "git_repo": "https://github.com/user/repo",
+            }
+        )
 
         assert result.success is True
         assert result.data["service_id"] == "srv-new"
@@ -231,12 +230,14 @@ class TestRenderDeploy:
         tools = skill.get_tools()
         deploy_tool = next(t for t in tools if t.name == "render_deploy")
 
-        result = deploy_tool.invoke({
-            "service_name": "my-site",
-            "service_type": "static_site",
-            "git_repo": "https://github.com/user/frontend",
-            "build_command": "npm run build",
-        })
+        result = deploy_tool.invoke(
+            {
+                "service_name": "my-site",
+                "service_type": "static_site",
+                "git_repo": "https://github.com/user/frontend",
+                "build_command": "npm run build",
+            }
+        )
 
         assert result.success is True
         assert result.data["type"] == "static_site"
@@ -264,12 +265,14 @@ class TestRenderDeploy:
         tools = skill.get_tools()
         deploy_tool = next(t for t in tools if t.name == "render_deploy")
 
-        result = deploy_tool.invoke({
-            "service_name": "my-api",
-            "service_type": "web_service",
-            "git_repo": "https://github.com/user/repo",
-            "environment_variables": {"DATABASE_URL": "postgres://..."},
-        })
+        result = deploy_tool.invoke(
+            {
+                "service_name": "my-api",
+                "service_type": "web_service",
+                "git_repo": "https://github.com/user/repo",
+                "environment_variables": {"DATABASE_URL": "postgres://..."},
+            }
+        )
 
         assert result.success is True
 
@@ -278,11 +281,13 @@ class TestRenderDeploy:
         tools = skill.get_tools()
         deploy_tool = next(t for t in tools if t.name == "render_deploy")
 
-        result = deploy_tool.invoke({
-            "service_name": "my-api",
-            "service_type": "invalid_type",
-            "git_repo": "https://github.com/user/repo",
-        })
+        result = deploy_tool.invoke(
+            {
+                "service_name": "my-api",
+                "service_type": "invalid_type",
+                "git_repo": "https://github.com/user/repo",
+            }
+        )
 
         assert result.success is False
         assert result.error == "INVALID_SERVICE_TYPE"
@@ -292,11 +297,13 @@ class TestRenderDeploy:
         tools = skill.get_tools()
         deploy_tool = next(t for t in tools if t.name == "render_deploy")
 
-        result = deploy_tool.invoke({
-            "service_name": "my-api",
-            "service_type": "web_service",
-            "git_repo": "https://github.com/user/repo",
-        })
+        result = deploy_tool.invoke(
+            {
+                "service_name": "my-api",
+                "service_type": "web_service",
+                "git_repo": "https://github.com/user/repo",
+            }
+        )
 
         assert result.success is False
         assert result.error == "MISSING_CREDENTIALS"

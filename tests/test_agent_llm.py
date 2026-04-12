@@ -11,7 +11,7 @@ from openops.agent.llm import (
     validate_llm_config,
 )
 from openops.config import OpenOpsConfig
-from openops.exceptions import ConfigurationError, CredentialError
+from openops.exceptions import CredentialError
 
 
 class TestGetModelString:

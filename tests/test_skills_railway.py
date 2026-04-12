@@ -4,10 +4,8 @@ import json
 from unittest.mock import patch
 
 import httpx
-import pytest
 
-from openops.exceptions import PlatformAPIError
-from openops.models import RiskLevel, SkillResult
+from openops.models import RiskLevel
 from openops.skills.railway import RailwaySkill
 
 
@@ -90,30 +88,32 @@ class TestRailwayListProjects:
         def handler(request: httpx.Request) -> httpx.Response:
             body = json.loads(request.content)
             if "projects" in body.get("query", "").lower():
-                return create_graphql_response({
-                    "projects": {
-                        "edges": [
-                            {
-                                "node": {
-                                    "id": "proj-1",
-                                    "name": "my-backend",
-                                    "description": "Backend API",
-                                    "updatedAt": "2024-01-01T00:00:00Z",
-                                    "services": {"edges": [{"node": {"id": "svc-1", "name": "api"}}]},
-                                }
-                            },
-                            {
-                                "node": {
-                                    "id": "proj-2",
-                                    "name": "another-project",
-                                    "description": None,
-                                    "updatedAt": "2024-01-02T00:00:00Z",
-                                    "services": {"edges": []},
-                                }
-                            },
-                        ]
+                return create_graphql_response(
+                    {
+                        "projects": {
+                            "edges": [
+                                {
+                                    "node": {
+                                        "id": "proj-1",
+                                        "name": "my-backend",
+                                        "description": "Backend API",
+                                        "updatedAt": "2024-01-01T00:00:00Z",
+                                        "services": {"edges": [{"node": {"id": "svc-1", "name": "api"}}]},
+                                    }
+                                },
+                                {
+                                    "node": {
+                                        "id": "proj-2",
+                                        "name": "another-project",
+                                        "description": None,
+                                        "updatedAt": "2024-01-02T00:00:00Z",
+                                        "services": {"edges": []},
+                                    }
+                                },
+                            ]
+                        }
                     }
-                })
+                )
             return httpx.Response(400)
 
         skill = RailwaySkill(token="test-token")
@@ -148,42 +148,44 @@ class TestRailwayListServices:
         def handler(request: httpx.Request) -> httpx.Response:
             body = json.loads(request.content)
             if "project" in body.get("query", "").lower():
-                return create_graphql_response({
-                    "project": {
-                        "id": "proj-1",
-                        "name": "my-backend",
-                        "services": {
-                            "edges": [
-                                {
-                                    "node": {
-                                        "id": "svc-1",
-                                        "name": "api",
-                                        "updatedAt": "2024-01-01T00:00:00Z",
-                                        "deployments": {
-                                            "edges": [
-                                                {
-                                                    "node": {
-                                                        "id": "deploy-1",
-                                                        "status": "SUCCESS",
-                                                        "url": "api.railway.app",
+                return create_graphql_response(
+                    {
+                        "project": {
+                            "id": "proj-1",
+                            "name": "my-backend",
+                            "services": {
+                                "edges": [
+                                    {
+                                        "node": {
+                                            "id": "svc-1",
+                                            "name": "api",
+                                            "updatedAt": "2024-01-01T00:00:00Z",
+                                            "deployments": {
+                                                "edges": [
+                                                    {
+                                                        "node": {
+                                                            "id": "deploy-1",
+                                                            "status": "SUCCESS",
+                                                            "url": "api.railway.app",
+                                                        }
                                                     }
-                                                }
-                                            ]
-                                        },
-                                    }
-                                },
-                                {
-                                    "node": {
-                                        "id": "svc-2",
-                                        "name": "worker",
-                                        "updatedAt": "2024-01-02T00:00:00Z",
-                                        "deployments": {"edges": []},
-                                    }
-                                },
-                            ]
-                        },
+                                                ]
+                                            },
+                                        }
+                                    },
+                                    {
+                                        "node": {
+                                            "id": "svc-2",
+                                            "name": "worker",
+                                            "updatedAt": "2024-01-02T00:00:00Z",
+                                            "deployments": {"edges": []},
+                                        }
+                                    },
+                                ]
+                            },
+                        }
                     }
-                })
+                )
             return httpx.Response(400)
 
         skill = RailwaySkill(token="test-token")
@@ -214,14 +216,10 @@ class TestRailwayDeploy:
 
             if "servicecreate" in query:
                 call_sequence.append("create")
-                return create_graphql_response({
-                    "serviceCreate": {"id": "svc-new", "name": "my-service"}
-                })
+                return create_graphql_response({"serviceCreate": {"id": "svc-new", "name": "my-service"}})
             elif "deploymenttrigger" in query:
                 call_sequence.append("deploy")
-                return create_graphql_response({
-                    "deploymentTrigger": {"id": "deploy-1", "status": "BUILDING"}
-                })
+                return create_graphql_response({"deploymentTrigger": {"id": "deploy-1", "status": "BUILDING"}})
             return httpx.Response(400)
 
         skill = RailwaySkill(token="test-token")
@@ -233,11 +231,13 @@ class TestRailwayDeploy:
         tools = skill.get_tools()
         deploy_tool = next(t for t in tools if t.name == "railway_deploy")
 
-        result = deploy_tool.invoke({
-            "project_id": "proj-1",
-            "service_name": "my-service",
-            "git_repo": "https://github.com/user/repo",
-        })
+        result = deploy_tool.invoke(
+            {
+                "project_id": "proj-1",
+                "service_name": "my-service",
+                "git_repo": "https://github.com/user/repo",
+            }
+        )
 
         assert result.success is True
         assert result.data["service_id"] == "svc-new"
@@ -254,17 +254,13 @@ class TestRailwayDeploy:
 
             if "servicecreate" in query:
                 call_sequence.append("create")
-                return create_graphql_response({
-                    "serviceCreate": {"id": "svc-new", "name": "my-service"}
-                })
+                return create_graphql_response({"serviceCreate": {"id": "svc-new", "name": "my-service"}})
             elif "variablecollectionupsert" in query:
                 call_sequence.append("env")
                 return create_graphql_response({"variableCollectionUpsert": True})
             elif "deploymenttrigger" in query:
                 call_sequence.append("deploy")
-                return create_graphql_response({
-                    "deploymentTrigger": {"id": "deploy-1", "status": "BUILDING"}
-                })
+                return create_graphql_response({"deploymentTrigger": {"id": "deploy-1", "status": "BUILDING"}})
             return httpx.Response(400)
 
         skill = RailwaySkill(token="test-token")
@@ -276,11 +272,13 @@ class TestRailwayDeploy:
         tools = skill.get_tools()
         deploy_tool = next(t for t in tools if t.name == "railway_deploy")
 
-        result = deploy_tool.invoke({
-            "project_id": "proj-1",
-            "service_name": "my-service",
-            "environment_variables": {"DATABASE_URL": "postgres://..."},
-        })
+        result = deploy_tool.invoke(
+            {
+                "project_id": "proj-1",
+                "service_name": "my-service",
+                "environment_variables": {"DATABASE_URL": "postgres://..."},
+            }
+        )
 
         assert result.success is True
         assert "env" in call_sequence
@@ -290,10 +288,12 @@ class TestRailwayDeploy:
         tools = skill.get_tools()
         deploy_tool = next(t for t in tools if t.name == "railway_deploy")
 
-        result = deploy_tool.invoke({
-            "project_id": "proj-1",
-            "service_name": "my-service",
-        })
+        result = deploy_tool.invoke(
+            {
+                "project_id": "proj-1",
+                "service_name": "my-service",
+            }
+        )
 
         assert result.success is False
         assert result.error == "MISSING_CREDENTIALS"

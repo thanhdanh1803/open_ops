@@ -71,7 +71,7 @@ orchestrator = create_deep_agent(
 
 **System Prompt (condensed)**:
 ```
-You are OpenOps, a DevOps assistant that helps developers deploy and monitor 
+You are OpenOps, a DevOps assistant that helps developers deploy and monitor
 their applications.
 
 Your capabilities:
@@ -96,7 +96,7 @@ project_analyzer = {
     "name": "project-analyzer",
     "model": "anthropic:claude-sonnet-4-5",
     "system_prompt": """You analyze project structures for deployment.
-    
+
 Your task is to:
 1. Identify all services in the project (frontend, backend, workers, etc.)
 2. Detect technology stacks (frameworks, languages, databases)
@@ -201,10 +201,10 @@ from langchain_core.tools import tool
 @tool
 def query_project_knowledge(project_path: str) -> dict:
     """Query stored knowledge about a project.
-    
+
     Args:
         project_path: Absolute path to the project
-        
+
     Returns:
         Project analysis including services, tech stack, and deployment history
     """
@@ -219,13 +219,13 @@ def save_project_knowledge(
     services: list[dict],
 ) -> bool:
     """Save project analysis to knowledge store.
-    
+
     Args:
         project_path: Absolute path to the project
         description: What this project does
         keypoints: Key observations from analysis
         services: List of services with their details
-        
+
     Returns:
         True if saved successfully
     """
@@ -234,10 +234,10 @@ def save_project_knowledge(
 @tool
 def detect_framework(directory: str) -> dict:
     """Detect the framework/technology used in a directory.
-    
+
     Args:
         directory: Path to check
-        
+
     Returns:
         Detected framework info including name, version, and confidence
     """
@@ -295,7 +295,7 @@ model:
   provider: anthropic  # openai, anthropic, google
   name: claude-sonnet-4-5
   temperature: 0.1
-  
+
 # Or via environment
 OPENOPS_MODEL=openai:gpt-4o
 ```

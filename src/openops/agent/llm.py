@@ -7,9 +7,9 @@ import logging
 from typing import Literal
 
 from langchain_anthropic import ChatAnthropic
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
-from langchain_core.language_models.chat_models import BaseChatModel
 
 from openops.config import OpenOpsConfig
 from openops.exceptions import ConfigurationError, CredentialError
@@ -79,8 +79,7 @@ def create_llm(config: OpenOpsConfig) -> BaseChatModel:
         )
     else:
         raise ConfigurationError(
-            f"Unsupported model provider: '{provider}'. "
-            f"Supported providers: anthropic, openai, google"
+            f"Unsupported model provider: '{provider}'. " f"Supported providers: anthropic, openai, google"
         )
 
 
@@ -98,19 +97,12 @@ def validate_llm_config(config: OpenOpsConfig) -> bool:
         ConfigurationError: If provider is unsupported
     """
     if config.model_provider not in ("anthropic", "openai", "google"):
-        raise ConfigurationError(
-            f"Unsupported model provider: '{config.model_provider}'"
-        )
+        raise ConfigurationError(f"Unsupported model provider: '{config.model_provider}'")
 
     if not config.get_llm_api_key():
-        raise CredentialError(
-            f"API key for provider '{config.model_provider}' is not configured"
-        )
+        raise CredentialError(f"API key for provider '{config.model_provider}' is not configured")
 
-    logger.debug(
-        f"LLM config validated: provider={config.model_provider}, "
-        f"model={config.model_name}"
-    )
+    logger.debug(f"LLM config validated: provider={config.model_provider}, " f"model={config.model_name}")
     return True
 
 

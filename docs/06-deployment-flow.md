@@ -115,9 +115,9 @@ Deployment Plan for my-saas to Vercel:
    - Generate: vercel.json
    - Env vars needed: DATABASE_URL, JWT_SECRET
    - Deploy as: Serverless Function
-   
+
 2. Web Service (apps/web)
-   - Generate: vercel.json  
+   - Generate: vercel.json
    - Env vars needed: NEXT_PUBLIC_API_URL
    - Depends on: API (needs URL for env var)
    - Deploy as: Next.js App
@@ -136,13 +136,13 @@ Generate platform-specific configuration files.
 ```python
 def generate_vercel_config(service: ServiceInfo) -> dict:
     """Generate vercel.json for a service."""
-    
+
     config = {"version": 2}
-    
+
     if service.framework == "nextjs":
         # Next.js auto-detected by Vercel, minimal config needed
         config["framework"] = "nextjs"
-        
+
     elif service.framework == "fastapi":
         config["builds"] = [{
             "src": "main.py",
@@ -152,14 +152,14 @@ def generate_vercel_config(service: ServiceInfo) -> dict:
             "src": "/(.*)",
             "dest": "main.py"
         }]
-        
+
     # Add environment variable references
     if service.env_vars:
         config["env"] = {
             var: f"@{var.lower()}"  # Reference Vercel env var
             for var in service.env_vars
         }
-    
+
     return config
 ```
 
@@ -168,23 +168,23 @@ def generate_vercel_config(service: ServiceInfo) -> dict:
 ```python
 def generate_railway_config(service: ServiceInfo) -> str:
     """Generate railway.toml for a service."""
-    
+
     config = {
         "[build]": {},
         "[deploy]": {},
     }
-    
+
     if service.build_command:
         config["[build]"]["builder"] = "nixpacks"
         config["[build]"]["buildCommand"] = service.build_command
-        
+
     if service.start_command:
         config["[deploy]"]["startCommand"] = service.start_command
-        
+
     if service.port:
         config["[deploy]"]["healthcheckPath"] = "/"
         config["[deploy]"]["healthcheckTimeout"] = 30
-    
+
     return toml.dumps(config)
 ```
 
@@ -198,18 +198,18 @@ async def execute_deployment(
     approve_fn: Callable[[str], bool],
 ) -> DeploymentResult:
     """Execute a deployment plan."""
-    
+
     results = []
-    
+
     # Sort services by dependencies (topological sort)
     sorted_services = topological_sort(plan.services)
-    
+
     for service_plan in sorted_services:
         # Generate config files
         for config_file in service_plan.config_files_to_generate:
             content = generate_config(service_plan, config_file)
             write_file(config_file, content)
-        
+
         # Request approval if needed
         if plan.requires_approval:
             if not approve_fn(f"Deploy {service_plan.service_name}?"):
@@ -217,16 +217,16 @@ async def execute_deployment(
                     success=False,
                     message="Deployment cancelled by user"
                 )
-        
+
         # Execute deployment
         skill = get_skill_for_platform(plan.platform)
         result = await skill.deploy(
             project_path=service_plan.path,
             config=service_plan.platform_config,
         )
-        
+
         results.append(result)
-        
+
         # Update env vars for dependent services
         if result.success and result.url:
             update_dependent_env_vars(
@@ -234,7 +234,7 @@ async def execute_deployment(
                 result.url,
                 sorted_services,
             )
-    
+
     return DeploymentResult(
         success=all(r.success for r in results),
         services=results,
@@ -248,7 +248,7 @@ After successful deployment:
 ```python
 async def deployment_followup(result: DeploymentResult):
     """Post-deployment actions."""
-    
+
     # 1. Save deployment to memory
     for service_result in result.services:
         memory.save_deployment(
@@ -257,11 +257,11 @@ async def deployment_followup(result: DeploymentResult):
             url=service_result.url,
             deployed_at=datetime.now(),
         )
-    
+
     # 2. Suggest monitoring setup
     if not monitoring_enabled():
         suggest_monitoring()
-    
+
     # 3. Provide next steps
     return f"""
 Deployment complete! 🎉
@@ -325,39 +325,39 @@ Suggested next steps:
 ```python
 async def deploy_with_recovery(plan: DeploymentPlan) -> DeploymentResult:
     """Deploy with automatic error recovery."""
-    
+
     max_retries = 3
-    
+
     for attempt in range(max_retries):
         try:
             result = await execute_deployment(plan)
             if result.success:
                 return result
-                
+
             # Analyze failure
             if result.error_type == "BUILD_FAILED":
                 # Ask user if they want to see logs
                 if user_wants_logs():
                     show_build_logs(result.build_logs)
-                    
+
                 # Suggest fixes
                 fixes = analyze_build_error(result.build_logs)
                 if fixes:
                     present_fixes(fixes)
-                    
+
             return result
-            
+
         except RateLimitError:
             wait_time = 2 ** attempt  # Exponential backoff
             await asyncio.sleep(wait_time)
-            
+
         except CredentialsError as e:
             return DeploymentResult(
                 success=False,
                 error_type="MISSING_CREDENTIALS",
                 message=f"Please run: openops credentials add {e.platform}"
             )
-    
+
     return DeploymentResult(
         success=False,
         error_type="MAX_RETRIES",
@@ -375,18 +375,18 @@ def plan_multi_service_deployment(
     platform: str,
 ) -> DeploymentPlan:
     """Plan deployment for multiple services."""
-    
+
     service_plans = []
-    
+
     # Build dependency graph
     dep_graph = build_dependency_graph(analysis.services)
-    
+
     # Determine deployment order
     order = topological_sort(dep_graph)
-    
+
     for service_name in order:
         service = get_service(analysis, service_name)
-        
+
         # Determine if service is compatible with platform
         if not is_compatible(service, platform):
             # Suggest alternative
@@ -394,7 +394,7 @@ def plan_multi_service_deployment(
             warnings.append(
                 f"{service_name} may be better suited for {alt_platform}"
             )
-        
+
         service_plans.append(ServiceDeployPlan(
             service_name=service_name,
             platform_config=generate_platform_config(service, platform),
@@ -402,7 +402,7 @@ def plan_multi_service_deployment(
             env_vars_needed=service.env_vars,
             dependencies=dep_graph.get(service_name, []),
         ))
-    
+
     return DeploymentPlan(
         services=service_plans,
         platform=platform,

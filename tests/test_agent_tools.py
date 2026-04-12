@@ -1,7 +1,6 @@
 """Tests for OpenOps custom tools."""
 
 from datetime import datetime
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -129,28 +128,30 @@ class TestQueryProjectKnowledge:
 class TestSaveProjectKnowledge:
     def test_save_new_project(self, tools, mock_store):
         save_tool = tools[1]
-        result = save_tool.invoke({
-            "project_path": "/new/project",
-            "project_name": "New Project",
-            "description": "A brand new project",
-            "keypoints": ["React frontend", "Node.js backend"],
-            "services": [
-                {
-                    "name": "frontend",
-                    "path": "./frontend",
-                    "type": "frontend",
-                    "framework": "React",
-                    "language": "TypeScript",
-                },
-                {
-                    "name": "backend",
-                    "path": "./backend",
-                    "type": "backend",
-                    "framework": "Express",
-                    "language": "JavaScript",
-                },
-            ],
-        })
+        result = save_tool.invoke(
+            {
+                "project_path": "/new/project",
+                "project_name": "New Project",
+                "description": "A brand new project",
+                "keypoints": ["React frontend", "Node.js backend"],
+                "services": [
+                    {
+                        "name": "frontend",
+                        "path": "./frontend",
+                        "type": "frontend",
+                        "framework": "React",
+                        "language": "TypeScript",
+                    },
+                    {
+                        "name": "backend",
+                        "path": "./backend",
+                        "type": "backend",
+                        "framework": "Express",
+                        "language": "JavaScript",
+                    },
+                ],
+            }
+        )
 
         assert result["success"] is True
         assert result["project_id"] is not None
@@ -173,13 +174,15 @@ class TestSaveProjectKnowledge:
         mock_store.upsert_project(project)
 
         save_tool = tools[1]
-        result = save_tool.invoke({
-            "project_path": "/existing/project",
-            "project_name": "Updated Name",
-            "description": "Updated description",
-            "keypoints": ["New keypoint"],
-            "services": [],
-        })
+        result = save_tool.invoke(
+            {
+                "project_path": "/existing/project",
+                "project_name": "Updated Name",
+                "description": "Updated description",
+                "keypoints": ["New keypoint"],
+                "services": [],
+            }
+        )
 
         assert result["success"] is True
         assert result["project_id"] == "existing-proj"
@@ -200,12 +203,14 @@ class TestRecordDeployment:
         mock_store.upsert_service(service)
 
         record_tool = tools[2]
-        result = record_tool.invoke({
-            "service_id": "svc-123",
-            "platform": "vercel",
-            "url": "https://api.vercel.app",
-            "dashboard_url": "https://vercel.com/dashboard",
-        })
+        result = record_tool.invoke(
+            {
+                "service_id": "svc-123",
+                "platform": "vercel",
+                "url": "https://api.vercel.app",
+                "dashboard_url": "https://vercel.com/dashboard",
+            }
+        )
 
         assert result["success"] is True
         assert result["deployment_id"] is not None
@@ -217,10 +222,12 @@ class TestRecordDeployment:
 
     def test_record_deployment_nonexistent_service(self, tools):
         record_tool = tools[2]
-        result = record_tool.invoke({
-            "service_id": "nonexistent",
-            "platform": "vercel",
-        })
+        result = record_tool.invoke(
+            {
+                "service_id": "nonexistent",
+                "platform": "vercel",
+            }
+        )
 
         assert result["success"] is False
         assert "not found" in result["message"]

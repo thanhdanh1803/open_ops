@@ -40,17 +40,17 @@ Priority: CLI flags > Environment > Project config > Global config > Defaults
 model:
   # LLM provider: openai, anthropic, google
   provider: anthropic
-  
+
   # Model name (provider-specific)
   # Anthropic: claude-sonnet-4-5, claude-opus-4
   # OpenAI: gpt-4o, gpt-4o-mini
   # Google: gemini-pro, gemini-ultra
   name: claude-sonnet-4-5
-  
+
   # Model parameters
   temperature: 0.1
   max_tokens: 4096
-  
+
   # Fallback model if primary fails
   fallback:
     provider: openai
@@ -62,10 +62,10 @@ model:
 cli:
   # Output format: rich, plain, json
   output_format: rich
-  
+
   # Color mode: auto, always, never
   color: auto
-  
+
   # Pager for long output: auto, always, never
   pager: auto
 
@@ -73,16 +73,16 @@ tui:
   # Syntax highlighting theme
   # Available: monokai, dracula, github-dark, one-dark, nord
   theme: monokai
-  
+
   # Command history size
   history_size: 1000
-  
+
   # Show thinking indicator while agent processes
   show_thinking: true
-  
+
   # Confirm before destructive operations
   confirm_destructive: true
-  
+
   # Auto-scroll to latest message
   auto_scroll: true
 
@@ -92,13 +92,13 @@ tui:
 defaults:
   # Default deployment platform
   platform: vercel
-  
+
   # Dry run by default (show what would happen without doing it)
   dry_run: false
-  
+
   # Auto-save project analysis
   auto_save_analysis: true
-  
+
   # Auto-suggest monitoring after deployment
   suggest_monitoring: true
 
@@ -109,16 +109,16 @@ memory:
   # Agent memory backend (only sqlite supported)
   agent_store: sqlite
   agent_store_path: ~/.openops/memory.db
-  
+
   # Project knowledge backend: sqlite or neo4j
   project_store: sqlite
   project_store_path: ~/.openops/projects.db
-  
+
   # Neo4j settings (if project_store: neo4j)
   neo4j_uri: bolt://localhost:7687
   neo4j_user: neo4j
   neo4j_password: ${OPENOPS_NEO4J_PASSWORD}
-  
+
   # Data retention
   conversation_retention_days: 30
   checkpoint_retention_days: 7
@@ -129,17 +129,17 @@ memory:
 monitoring:
   # Enable background monitoring
   enabled: false
-  
+
   # Check interval in seconds
   interval: 60
-  
+
   # Thresholds
   thresholds:
     response_time_warning: 1000   # ms
     response_time_critical: 5000  # ms
     error_rate_warning: 0.01      # 1%
     error_rate_critical: 0.05     # 5%
-  
+
   # Alert channels
   alerts:
     slack:
@@ -149,7 +149,7 @@ monitoring:
         critical: "#alerts-critical"
         warning: "#alerts-warning"
         info: "#alerts-info"
-    
+
     email:
       enabled: false
       smtp_host: smtp.example.com
@@ -168,10 +168,10 @@ skills:
   paths:
     - ~/.openops/skills/
     - ./skills/
-  
+
   # Auto-update community skills
   auto_update: true
-  
+
   # Update check interval (hours)
   update_interval: 24
 
@@ -184,14 +184,14 @@ security:
     - deploy
     - delete_file
     - modify_env
-  
+
   # Sandbox file operations to project directory
   sandbox_enabled: true
-  
+
   # Allowed directories outside sandbox
   allowed_paths:
     - ~/.openops/
-  
+
   # Credential encryption
   credential_encryption: true
 
@@ -201,16 +201,16 @@ security:
 logging:
   # Log level: debug, info, warning, error
   level: info
-  
+
   # Log file path
   file: ~/.openops/openops.log
-  
+
   # Log format: text, json
   format: text
-  
+
   # Max log file size (MB)
   max_size: 10
-  
+
   # Number of backup files to keep
   backup_count: 3
 
@@ -220,16 +220,16 @@ logging:
 advanced:
   # Request timeout (seconds)
   request_timeout: 30
-  
+
   # Max retries for failed requests
   max_retries: 3
-  
+
   # Retry backoff multiplier
   retry_backoff: 2.0
-  
+
   # Enable debug mode
   debug: false
-  
+
   # Disable telemetry
   telemetry_disabled: false
 ```
@@ -248,23 +248,23 @@ class CredentialStore:
         self.path = Path(path).expanduser()
         self.key = self._get_or_create_key()
         self.fernet = Fernet(self.key)
-    
+
     def _get_or_create_key(self) -> bytes:
         """Get or create encryption key from system keyring."""
         import keyring
-        
+
         key = keyring.get_password("openops", "encryption_key")
         if not key:
             key = Fernet.generate_key().decode()
             keyring.set_password("openops", "encryption_key", key)
         return key.encode()
-    
+
     def set(self, name: str, value: str) -> None:
         """Store an encrypted credential."""
         data = self._load()
         data[name] = self.fernet.encrypt(value.encode()).decode()
         self._save(data)
-    
+
     def get(self, name: str) -> str | None:
         """Retrieve a decrypted credential."""
         data = self._load()
@@ -355,7 +355,7 @@ services:
     env_vars:
       - DATABASE_URL
       - JWT_SECRET
-  
+
   web:
     platform: vercel
     env_vars:
@@ -429,7 +429,7 @@ class ModelConfig(BaseModel):
     name: str
     temperature: float = 0.1
     max_tokens: int = 4096
-    
+
     @validator("temperature")
     def validate_temperature(cls, v):
         if not 0 <= v <= 2:
@@ -439,7 +439,7 @@ class ModelConfig(BaseModel):
 class MonitoringConfig(BaseModel):
     enabled: bool = False
     interval: int = 60
-    
+
     @validator("interval")
     def validate_interval(cls, v):
         if v < 10:
@@ -450,18 +450,18 @@ class OpenOpsConfig(BaseModel):
     model: ModelConfig
     monitoring: MonitoringConfig
     # ... other sections
-    
+
     @classmethod
     def load(cls, path: str = "~/.openops/config.yaml") -> "OpenOpsConfig":
         """Load and validate configuration."""
         path = Path(path).expanduser()
-        
+
         if not path.exists():
             return cls.defaults()
-        
+
         with open(path) as f:
             data = yaml.safe_load(f)
-        
+
         return cls(**data)
 ```
 
