@@ -1,0 +1,48 @@
+[project]
+name = "openops"
+version = "0.1.0"
+description = "DevOps Chat Agent v1"
+requires-python = ">=3.11"
+dependencies = [
+  "langchain>=1.0",
+  "langgraph>=1.0",
+  "langgraph-checkpoint-sqlite>=2.0.0",
+  "pydantic>=2.8.0",
+  "typer>=0.12.0",
+  "rich>=13.7.0",
+  "neo4j>=5.20.0",
+  "httpx>=0.28.1",
+  "langchain-openai>=1.1.12",
+  "python-dotenv>=1.2.2",
+  "pyyaml>=6.0.3",
+  "pydantic-settings>=2.13.1",
+  "langchain-anthropic>=1.4.0",
+  "deepagents>=0.5.2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+]
+
+[project.scripts]
+openops = "openops.cli:app"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--tb=short",
+]

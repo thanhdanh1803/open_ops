@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+.openops_runs.jsonl
+.env
+*.egg-info/
