@@ -46,11 +46,25 @@ railway --version
 
 The user must be logged in to Railway CLI:
 
+Verify railway authentication by using
+
+```bash
+railway whoami
+```
+
+If not authenticated: try to login using non-interactive mode with `RAILWAY_TOKEN` / `RAILWAY_API_TOKEN` (when the user provides a token in the environment)
+
 ```bash
 railway login
 ```
 
-This opens a browser for authentication.
+If this raise because of non-interactive enviroment does not support, use `handling-interactive-commands` skill to handle the error and retry with the same command in tmux:
+
+```bash
+railway login
+```
+
+
 
 To check auth status:
 ```bash
@@ -67,10 +81,6 @@ Logged in as user@example.com (User ID: xxx)
 Not logged in
 ```
 
-If not authenticated:
-1. Ask user for permission to authenticate
-2. Execute `railway login` (this opens a browser for authentication)
-3. Wait for authentication to complete, then verify with `railway whoami`
 
 ## Supported Frameworks
 
@@ -145,6 +155,78 @@ Each project has environments (production, staging, etc.) with isolated:
    (When using **`--project`**, **`--environment`** is required per Railway docs.)
 
 6. **Automation / CI** — prefer **`RAILWAY_TOKEN`** (project token) or **`RAILWAY_API_TOKEN`** per Railway docs; still use explicit **project**, **environment**, and **service** flags where applicable—do not depend on interactive menus.
+
+### Disambiguation workflow (generic): list → present choices → user picks → retry with explicit flags
+
+Railway CLIs frequently “block” when there are multiple valid targets (multiple **workspaces**, **projects**, **environments**, or **services**) and the command needs an explicit selection (e.g. it requires `--service`). As an agent, **never stop at a blocker message**. Instead, resolve ambiguity with a repeatable “choose one” loop.
+
+#### When to trigger disambiguation
+
+Trigger this workflow whenever you see any of the following patterns (stdout/stderr) or equivalent wording:
+- The CLI mentions multiple targets and asks you to choose in a TUI/menu you can’t use.
+- The CLI says a selection is required (e.g. “needs an explicit `--service`”, “please specify `--project`”, “environment is required”, “multiple workspaces found”).
+- The CLI is “stuck” waiting for input or prints a prompt without a real TTY.
+
+#### How to resolve (decision tree)
+
+1. **Fetch canonical options (JSON)**:
+   - Projects + environments + services (preferred):
+     ```bash
+     railway list --json
+     ```
+   - Workspaces (if needed separately):
+     ```bash
+     railway whoami --json
+     ```
+
+2. **Build an option set from the JSON**:
+   - **Workspace**: `workspace.name` + `workspace.id`
+   - **Project**: `project.name` + `project.id`
+   - **Environment**: `environment.name` (and id if present)
+   - **Service**: `service.name` (and id if present)
+
+3. **Ask the user to choose** (always offer a numbered list):
+   - If multiple **workspaces** exist and you can’t infer the right one, ask for workspace first.
+   - Then ask for **project**.
+   - Then ask for **environment** (if multiple exist, or if the command requires it).
+   - Then ask for **service** (if multiple services exist, or if the command requires it).
+
+4. **Retry using explicit flags (non-interactive)**:
+   - Prefer linking the current directory first (creates/updates `.railway`), then run deploy:
+     ```bash
+     railway link --workspace <workspace_id> --project <project_id_or_name> --environment <environment_name_or_id> --service <service_name_or_id> --json
+     ```
+     Then:
+     ```bash
+     railway up
+     ```
+   - If you already know the target and your CLI supports it, you may deploy directly with flags:
+     ```bash
+     railway up --project <project_id> --environment <environment_name_or_id> --service <service_name_or_id>
+     ```
+
+#### Presentation template (use this verbatim shape)
+
+When prompting the user, keep it short and deterministic:
+
+```
+I found multiple Railway <things>. Which one should I use?
+
+1) <name> — <id>
+2) <name> — <id>
+...
+
+Reply with the number (or paste the id/name).
+```
+
+If you need multiple picks (project + environment + service), ask them in one message:
+
+```
+Reply with:
+- project: (number/id/name)
+- environment: (name/id)
+- service: (name/id)
+```
 
 ### Link to Project
 
@@ -315,11 +397,6 @@ If CLI not installed:
 railway whoami
 ```
 
-If not authenticated:
-1. Ask user for permission to authenticate
-2. Execute `railway login` (opens browser)
-3. Verify with `railway whoami` after completion
-
 ### 2. List projects and get user selection
 
 ```bash
@@ -380,8 +457,11 @@ Database connection strings are automatically injected as environment variables:
 
 | Error Output | Cause | Action |
 |--------------|-------|--------|
-| `Not logged in` | Not authenticated | Ask permission, then execute `railway login` |
+| `Not logged in` | Not authenticated | Ask permission, then run `railway login` in **interactive mode** (tmux) when no `RAILWAY_TOKEN` / `RAILWAY_API_TOKEN` is available; re-check with `railway whoami` |
 | `No project linked` | Not linked to project | Run **`railway list --json`**, ask user to choose project/env/service, then **`railway link --project … --environment … [--workspace …] [--service …] --json`** (avoid interactive `railway link` in agent runs) |
+| Mentions multiple projects/workspaces/environments or requires selection | Ambiguous target | Run **`railway list --json`** (and **`railway whoami --json`** if needed), present a numbered list, ask user to choose, then retry with explicit flags (`--workspace/--project/--environment/--service`) |
+| Mentions “needs an explicit `--service`” (or similar) | Multiple services in the selected project/environment | From **`railway list --json`**, present services for the chosen project/env, ask user which service, then rerun **`railway link ... --service ... --json`** (or `railway up ... --service ...`) |
+| Mentions environment required / multiple environments | Environment not specified or ambiguous | From **`railway list --json`**, list environments for the chosen project, ask user which environment, then rerun with `--environment ...` |
 | `Build failed` | Build error | Execute `railway logs` to diagnose, then fix |
 | `Project not found` | Invalid project | Run **`railway list --json`** and reconcile ids/names with the user |
 | `command not found: railway` | CLI not installed | Ask permission, then install CLI |
@@ -439,29 +519,6 @@ worker: python worker.py
 
 ## Example Conversations
 
-**Deploy backend API (CLI not installed):**
-```
-User: "Deploy my FastAPI backend to Railway"
-Agent: [executes: railway --version]
-Agent: "Railway CLI is not installed. May I install it for you?"
-User: "Yes"
-Agent: [executes: npm install -g @railway/cli]
-Agent: "CLI installed. Checking authentication..."
-Agent: [executes: railway whoami]
-Agent: "Not authenticated. May I run `railway login`? This will open a browser window."
-User: "Go ahead"
-Agent: [executes: railway login]
-Agent: "Please complete authentication in the browser..."
-Agent: [executes: railway whoami]
-Agent: "Authenticated as user@example.com. Listing your Railway projects..."
-Agent: [executes: railway list --json]
-Agent: "Here are your projects: (1) my-app-prod — id … (2) my-app-staging — id …. Which should I deploy to?"
-User: "my-app-prod, production"
-Agent: [executes: railway link --project my-app-prod --environment production --json]
-Agent: [executes: railway up]
-Agent: "Deployed! Service is building at https://railway.app/project/xxx"
-```
-
 **Deploy backend API (already set up):**
 ```
 User: "Deploy my FastAPI backend to Railway"
@@ -473,6 +530,28 @@ User: "my-app-prod, production"
 Agent: [executes: railway link --project my-app-prod --environment production --json]
 Agent: [executes: railway up --detach]
 Agent: "Deployed! Service is building. URL: https://api-production.up.railway.app"
+```
+
+**Deploy blocked because multiple services (requires `--service`):**
+```
+User: "Deploy my backend to Railway"
+Agent: [executes: railway whoami]
+Agent: "You're logged in. Listing projects/services so we can select the right target..."
+Agent: [executes: railway list --json]
+Agent: "I found multiple services in the selected project/environment. Which service should I deploy?
+
+1) api — id …
+2) worker — id …
+3) postgres — id …
+
+Reply with:
+- project: (number/id/name)
+- environment: (name/id)
+- service: (number/id/name)"
+User: "project: 1, environment: production, service: api"
+Agent: [executes: railway link --project <id_or_name> --environment production --service api --json]
+Agent: [executes: railway up --detach]
+Agent: "Deploy started. I’ll report the build URL / public URL once it appears in `railway status`."
 ```
 
 **Check deployment status:**

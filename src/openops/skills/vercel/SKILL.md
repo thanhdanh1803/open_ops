@@ -44,6 +44,9 @@ vercel login
 
 This opens a browser for authentication. After login, credentials are stored locally.
 
+Non-interactive alternative (when the user provides a token in the environment):
+- `VERCEL_TOKEN` (recommended for CI/automation when available)
+
 To check auth status:
 ```bash
 vercel whoami
@@ -61,7 +64,7 @@ Error: Not authenticated. Please run `vercel login`.
 
 If not authenticated:
 1. Ask user for permission to authenticate
-2. Execute `vercel login` (this opens a browser for authentication)
+2. If **no `VERCEL_TOKEN` is available** (common in local agent shells), run `vercel login` in **interactive mode** (tmux) so the user can complete any browser/device prompts reliably
 3. Wait for authentication to complete, then verify with `vercel whoami`
 
 ## Supported Frameworks
@@ -207,7 +210,7 @@ vercel whoami
 
 If not authenticated:
 1. Ask user for permission to authenticate
-2. Execute `vercel login` (opens browser)
+2. If **no `VERCEL_TOKEN` is available**, run `vercel login` in **interactive mode** (tmux) so the user can complete the login flow
 3. Verify with `vercel whoami` after completion
 
 ### 4. Deploy
@@ -226,10 +229,10 @@ Parse the output URL and confirm deployment is live.
 
 | Error Output | Cause | Action |
 |--------------|-------|--------|
-| `Error: Not authenticated` | Not logged in | Ask permission, then execute `vercel login` |
+| `Error: Not authenticated` | Not logged in | Ask permission, then run `vercel login` in **interactive mode** (tmux) when no `VERCEL_TOKEN` is available; re-check with `vercel whoami` |
 | `Error: No Project Settings found` | First deploy | Execute `vercel --yes` to set up |
 | `Error: Build Failed` | Build error | Analyze build logs, then fix the issue |
-| `Error: forbidden` | Token lacks permissions | Ask permission, then execute `vercel login` to re-authenticate |
+| `Error: forbidden` | Token lacks permissions / wrong account | Ask permission, then run `vercel login` in **interactive mode** (tmux) to re-authenticate; re-check with `vercel whoami` |
 | `command not found: vercel` | CLI not installed | Ask permission, then install CLI |
 
 ## Output Parsing
@@ -248,25 +251,6 @@ Look for:
 - Exit code non-zero
 
 ## Example Conversations
-
-**Deploy project (CLI not installed):**
-```
-User: "Deploy my project to Vercel"
-Agent: [executes: vercel --version]
-Agent: "Vercel CLI is not installed. May I install it for you?"
-User: "Yes"
-Agent: [executes: npm install -g vercel]
-Agent: "CLI installed. Checking authentication..."
-Agent: [executes: vercel whoami]
-Agent: "Not authenticated. May I run `vercel login`? This will open a browser window."
-User: "Yes"
-Agent: [executes: vercel login]
-Agent: "Please complete authentication in the browser..."
-Agent: [executes: vercel whoami]
-Agent: "Authenticated as user@example.com. Deploying to preview..."
-Agent: [executes: vercel --yes]
-Agent: "Deployed! Your app is live at https://project-xxx.vercel.app"
-```
 
 **Simple deployment (already set up):**
 ```
