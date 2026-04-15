@@ -56,7 +56,7 @@ from langgraph.store.memory import InMemoryStore
 from openops.agent.llm import create_llm, get_model_string
 from openops.agent.prompts import ORCHESTRATOR_PROMPT
 from openops.agent.subagents import create_all_subagents
-from openops.agent.tools import create_project_knowledge_tools
+from openops.agent.tools import create_interactive_tools, create_project_knowledge_tools
 from openops.config import OpenOpsConfig
 from openops.credentials.platforms import build_interrupt_config
 from openops.storage.base import ProjectStoreBase
@@ -137,7 +137,8 @@ def create_orchestrator(
             logger.debug(f"Set {env_var} for subagent initialization")
 
     project_tools = create_project_knowledge_tools(project_store)
-    tools = project_tools + (additional_tools or [])
+    interactive_tools = create_interactive_tools()
+    tools = project_tools + interactive_tools + (additional_tools or [])
     logger.debug(f"Loaded {len(tools)} custom tools")
 
     subagents = create_all_subagents(

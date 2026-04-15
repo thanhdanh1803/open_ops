@@ -12,6 +12,12 @@ from typing import Any
 
 from langchain_core.tools import tool
 
+from openops.agent.interactive_tmux import (
+    TmuxError,
+)
+from openops.agent.interactive_tmux import (
+    interactive_execute_tmux as _interactive_execute_tmux,
+)
 from openops.models import Deployment, Project, Service
 from openops.storage.base import ProjectStoreBase
 
@@ -292,4 +298,41 @@ def create_project_knowledge_tools(
     ]
 
 
-__all__ = ["create_project_knowledge_tools"]
+def create_interactive_tools() -> list:
+    """Create tools for handling interactive commands (local tmux)."""
+
+    @tool
+    def interactive_execute_tmux(command: str, timeout_s: float = 1800.0) -> dict[str, Any]:
+        """Run an interactive command in tmux and return a transcript.
+
+        Use this when a command is likely to require a real terminal (TTY),
+        pagers, editors, password prompts, or other interactive input.
+
+        Args:
+            command: Shell command to run (executed via bash -lc in tmux).
+            timeout_s: Max time to allow for the interactive session.
+
+        Returns:
+            Dictionary with:
+            - session: tmux session name
+            - transcript: captured pane output
+            - note: important warnings/instructions
+        """
+        logger.info("Starting interactive tmux execution")
+        logger.debug("Interactive command: %s", command)
+        try:
+            return _interactive_execute_tmux(command, timeout_s=timeout_s)
+        except TmuxError as e:
+            logger.warning("Interactive tmux execution failed: %s", e)
+            return {
+                "success": False,
+                "error": str(e),
+                "session": None,
+                "transcript": "",
+                "note": "tmux execution failed",
+            }
+
+    return [interactive_execute_tmux]
+
+
+__all__ = ["create_project_knowledge_tools", "create_interactive_tools"]

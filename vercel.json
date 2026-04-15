@@ -1,0 +1,8 @@
+{
+  "experimentalServices": {
+    "backend": {
+      "entrypoint": "docs/mock-project/backend",
+      "routePrefix": "/"
+    }
+  }
+}
