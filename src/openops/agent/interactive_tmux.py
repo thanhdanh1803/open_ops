@@ -16,6 +16,11 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from openops.live_display_bridge import (
+    pause_cli_live_for_external_tty,
+    resume_cli_live_after_external_tty,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -83,7 +88,15 @@ def interactive_execute_tmux(
             raise TmuxError(piped.stderr.strip() or piped.stdout.strip() or "Failed to enable tmux pipe-pane")
 
         logger.info("Attaching to tmux session %s (detach with Ctrl-b then d)", session)
-        attach = subprocess.run(["tmux", "attach-session", "-t", session], timeout=timeout_s, check=False)
+        pause_cli_live_for_external_tty()
+        try:
+            attach = subprocess.run(
+                ["tmux", "attach-session", "-t", session],
+                timeout=timeout_s,
+                check=False,
+            )
+        finally:
+            resume_cli_live_after_external_tty()
         if attach.returncode != 0:
             raise TmuxError(f"tmux attach failed with exit code {attach.returncode}")
 
