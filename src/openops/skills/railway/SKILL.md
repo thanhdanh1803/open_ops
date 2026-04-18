@@ -1,8 +1,9 @@
 ---
 name: railway
 description: Deploy backend services and databases to Railway using the Railway CLI
-version: 2.1.0
-author: OpenOps Team
+metadata:
+  version: 2.1.0
+  author: OpenOps Team
 risk_level: write
 platforms:
   - railway
@@ -16,17 +17,24 @@ requires:
 ## When to Use
 
 Use this skill when:
-- User wants to deploy backend services (APIs, workers)
-- User needs managed databases (PostgreSQL, Redis, MongoDB)
+- User wants to deploy backend services (APIs, workers) to Railway
+- User needs managed databases (PostgreSQL, Redis, MongoDB) with Railway
 - Project is built with Python, Node.js, Go, Rust, or other backend frameworks
 - User mentions Railway as the target platform
 - User needs infrastructure with persistent storage
 
-When an **agent** deploys: follow **list → user choice → non-interactive `railway link` → `railway up`** (see **Agent workflow** below); do not depend on interactive CLI menus in subprocesses.
+
 
 ## Prerequisites
 
 ### 1. CLI Installation
+
+Verify installation:
+```bash
+railway --version
+```
+
+To in stall Railway CLI, using:
 
 ```bash
 npm install -g @railway/cli
@@ -35,11 +43,6 @@ npm install -g @railway/cli
 Or using Homebrew (macOS):
 ```bash
 brew install railway
-```
-
-Verify installation:
-```bash
-railway --version
 ```
 
 ### 2. Authentication
@@ -58,29 +61,16 @@ If not authenticated: try to login using non-interactive mode with `RAILWAY_TOKE
 railway login
 ```
 
-If this raise because of non-interactive enviroment does not support, use `handling-interactive-commands` skill to handle the error and retry with the same command in tmux:
+If this raise error because of non-interactive enviroment does not support, use `handling-interactive-commands` skill to handle the error and retry with the same command in tmux:
 
 ```bash
 railway login
-```
-
-
-
-To check auth status:
-```bash
-railway whoami
 ```
 
 **Expected output (authenticated):**
 ```
 Logged in as user@example.com (User ID: xxx)
 ```
-
-**Expected output (not authenticated):**
-```
-Not logged in
-```
-
 
 ## Supported Frameworks
 

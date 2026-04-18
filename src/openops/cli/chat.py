@@ -21,6 +21,7 @@ from openops.cli.main import app, show_error
 from openops.cli.runtime import OpenOpsRuntime, create_runtime, get_or_create_thread_id
 from openops.config import get_config
 from openops.exceptions import CredentialError, OpenOpsError
+from openops.live_display_bridge import bind_cli_live, unbind_cli_live
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -266,8 +267,12 @@ def _chat_loop(runtime: OpenOpsRuntime, thread_id: str, project_path: Path) -> N
                 Spinner("dots", text="Thinking...", style="blue"),
                 refresh_per_second=10,
                 transient=True,
-            ):
-                result = runtime.invoke(user_input, thread_id)
+            ) as thinking_live:
+                bind_cli_live(thinking_live)
+                try:
+                    result = runtime.invoke(user_input, thread_id)
+                finally:
+                    unbind_cli_live()
 
             content = _extract_response_content(result)
             _show_response(content)
