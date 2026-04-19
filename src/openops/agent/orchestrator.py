@@ -112,6 +112,7 @@ def create_orchestrator(
                 str(package_skills_dir),  # Built-in package skills
                 str(Path.home() / ".openops" / "skills"),  # User custom skills
                 "./skills/",  # Local project skills
+                str(Path.home() / ".agents" / "skills"),  # User global skills
             ]
         logger.debug(f"Using skill directories: {skill_directories}")
 

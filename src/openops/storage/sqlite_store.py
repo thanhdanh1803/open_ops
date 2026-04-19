@@ -3,6 +3,7 @@
 import json
 import logging
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -17,6 +18,10 @@ class SqliteProjectStore(ProjectStoreBase):
 
     This store persists project metadata, services, and deployment information
     to a local SQLite database.
+
+    A single ``sqlite3`` connection may be used from multiple threads (e.g.
+    LangGraph ToolNode). All access is serialized with a re-entrant lock so the
+    connection is never used concurrently.
     """
 
     def __init__(self, db_path: str | Path):
@@ -27,15 +32,20 @@ class SqliteProjectStore(ProjectStoreBase):
         """
         self.db_path = str(db_path)
         self._connection: sqlite3.Connection | None = None
+        self._db_lock = threading.RLock()
         self._init_schema()
 
-    @property
-    def connection(self) -> sqlite3.Connection:
-        """Get or create the database connection."""
+    def _conn(self) -> sqlite3.Connection:
+        """Return the live SQLite connection.
+
+        Call only while holding ``self._db_lock``.
+        """
         if self._connection is None:
             self._connection = sqlite3.connect(self.db_path, check_same_thread=False)
             self._connection.row_factory = sqlite3.Row
             self._connection.execute("PRAGMA foreign_keys = ON")
+            self._connection.execute("PRAGMA busy_timeout = 10000")
+            logger.debug("Opened SQLite connection for %s", self.db_path)
         return self._connection
 
     def _init_schema(self) -> None:
@@ -44,15 +54,24 @@ class SqliteProjectStore(ProjectStoreBase):
         with open(schema_path) as f:
             schema_sql = f.read()
 
-        self.connection.executescript(schema_sql)
-        self.connection.commit()
-        logger.debug(f"Initialized schema for database at {self.db_path}")
+        with self._db_lock:
+            self._conn().executescript(schema_sql)
+            self._conn().commit()
+        logger.debug("Initialized schema for database at %s", self.db_path)
 
     def close(self) -> None:
         """Close the database connection."""
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
+        with self._db_lock:
+            if self._connection is not None:
+                self._connection.close()
+                self._connection = None
+                logger.debug("Closed SQLite connection for %s", self.db_path)
+
+    def pragma_integrity_check(self) -> str:
+        """Run ``PRAGMA integrity_check`` under the store lock (for diagnostics)."""
+        with self._db_lock:
+            row = self._conn().execute("PRAGMA integrity_check").fetchone()
+            return row[0] if row else ""
 
     def _serialize_datetime(self, dt: datetime | None) -> str | None:
         """Serialize datetime to ISO format string."""
@@ -114,34 +133,36 @@ class SqliteProjectStore(ProjectStoreBase):
 
     def upsert_project(self, project: Project) -> None:
         """Insert or update a project."""
-        self.connection.execute(
-            """
-            INSERT INTO projects (id, path, name, description, keypoints, analyzed_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                path = excluded.path,
-                name = excluded.name,
-                description = excluded.description,
-                keypoints = excluded.keypoints,
-                analyzed_at = excluded.analyzed_at,
-                updated_at = excluded.updated_at
-            """,
-            (
-                project.id,
-                project.path,
-                project.name,
-                project.description,
-                json.dumps(project.keypoints),
-                self._serialize_datetime(project.analyzed_at),
-                self._serialize_datetime(project.updated_at),
-            ),
-        )
-        self.connection.commit()
-        logger.debug(f"Upserted project: {project.id} at {project.path}")
+        with self._db_lock:
+            self._conn().execute(
+                """
+                INSERT INTO projects (id, path, name, description, keypoints, analyzed_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    path = excluded.path,
+                    name = excluded.name,
+                    description = excluded.description,
+                    keypoints = excluded.keypoints,
+                    analyzed_at = excluded.analyzed_at,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    project.id,
+                    project.path,
+                    project.name,
+                    project.description,
+                    json.dumps(project.keypoints),
+                    self._serialize_datetime(project.analyzed_at),
+                    self._serialize_datetime(project.updated_at),
+                ),
+            )
+            self._conn().commit()
+        logger.debug("Upserted project: %s at %s", project.id, project.path)
 
     def get_project(self, path: str) -> Project | None:
         """Get a project by its path."""
-        row = self.connection.execute("SELECT * FROM projects WHERE path = ?", (path,)).fetchone()
+        with self._db_lock:
+            row = self._conn().execute("SELECT * FROM projects WHERE path = ?", (path,)).fetchone()
 
         if not row:
             return None
@@ -150,7 +171,8 @@ class SqliteProjectStore(ProjectStoreBase):
 
     def get_project_by_id(self, project_id: str) -> Project | None:
         """Get a project by its ID."""
-        row = self.connection.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        with self._db_lock:
+            row = self._conn().execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
 
         if not row:
             return None
@@ -159,78 +181,81 @@ class SqliteProjectStore(ProjectStoreBase):
 
     def list_projects(self) -> list[Project]:
         """List all known projects."""
-        rows = self.connection.execute("SELECT * FROM projects ORDER BY updated_at DESC").fetchall()
+        with self._db_lock:
+            rows = self._conn().execute("SELECT * FROM projects ORDER BY updated_at DESC").fetchall()
 
         return [self._row_to_project(row) for row in rows]
 
     def delete_project(self, project_id: str) -> bool:
         """Delete a project and all associated data."""
-        cursor = self.connection.execute("DELETE FROM projects WHERE id = ?", (project_id,))
-        self.connection.commit()
-        deleted = cursor.rowcount > 0
+        with self._db_lock:
+            cursor = self._conn().execute("DELETE FROM projects WHERE id = ?", (project_id,))
+            self._conn().commit()
+            deleted = cursor.rowcount > 0
         if deleted:
-            logger.debug(f"Deleted project: {project_id}")
+            logger.debug("Deleted project: %s", project_id)
         return deleted
 
     # Service operations
 
     def upsert_service(self, service: Service) -> None:
         """Insert or update a service."""
-        self.connection.execute(
-            """
-            INSERT INTO services (
-                id, project_id, name, path, description, type, framework, language,
-                version, entry_point, build_command, start_command, port, env_vars,
-                dependencies, keypoints
+        with self._db_lock:
+            self._conn().execute(
+                """
+                INSERT INTO services (
+                    id, project_id, name, path, description, type, framework, language,
+                    version, entry_point, build_command, start_command, port, env_vars,
+                    dependencies, keypoints
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    project_id = excluded.project_id,
+                    name = excluded.name,
+                    path = excluded.path,
+                    description = excluded.description,
+                    type = excluded.type,
+                    framework = excluded.framework,
+                    language = excluded.language,
+                    version = excluded.version,
+                    entry_point = excluded.entry_point,
+                    build_command = excluded.build_command,
+                    start_command = excluded.start_command,
+                    port = excluded.port,
+                    env_vars = excluded.env_vars,
+                    dependencies = excluded.dependencies,
+                    keypoints = excluded.keypoints
+                """,
+                (
+                    service.id,
+                    service.project_id,
+                    service.name,
+                    service.path,
+                    service.description,
+                    service.type,
+                    service.framework,
+                    service.language,
+                    service.version,
+                    service.entry_point,
+                    service.build_command,
+                    service.start_command,
+                    service.port,
+                    json.dumps(service.env_vars),
+                    json.dumps(service.dependencies),
+                    json.dumps(service.keypoints),
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                project_id = excluded.project_id,
-                name = excluded.name,
-                path = excluded.path,
-                description = excluded.description,
-                type = excluded.type,
-                framework = excluded.framework,
-                language = excluded.language,
-                version = excluded.version,
-                entry_point = excluded.entry_point,
-                build_command = excluded.build_command,
-                start_command = excluded.start_command,
-                port = excluded.port,
-                env_vars = excluded.env_vars,
-                dependencies = excluded.dependencies,
-                keypoints = excluded.keypoints
-            """,
-            (
-                service.id,
-                service.project_id,
-                service.name,
-                service.path,
-                service.description,
-                service.type,
-                service.framework,
-                service.language,
-                service.version,
-                service.entry_point,
-                service.build_command,
-                service.start_command,
-                service.port,
-                json.dumps(service.env_vars),
-                json.dumps(service.dependencies),
-                json.dumps(service.keypoints),
-            ),
-        )
 
-        self._sync_service_dependencies(service.id, service.dependencies)
-        self.connection.commit()
-        logger.debug(f"Upserted service: {service.id} ({service.name})")
+            self._sync_service_dependencies_unlocked(service.id, service.dependencies)
+            self._conn().commit()
+        logger.debug("Upserted service: %s (%s)", service.id, service.name)
 
-    def _sync_service_dependencies(self, service_id: str, dependencies: list[str]) -> None:
-        """Synchronize the service_dependencies table with the dependencies list."""
-        self.connection.execute("DELETE FROM service_dependencies WHERE service_id = ?", (service_id,))
+    def _sync_service_dependencies_unlocked(self, service_id: str, dependencies: list[str]) -> None:
+        """Synchronize the service_dependencies table; caller must hold ``_db_lock``."""
+        self._conn().execute("DELETE FROM service_dependencies WHERE service_id = ?", (service_id,))
 
         for depends_on_id in dependencies:
-            self.connection.execute(
+            self._conn().execute(
                 """
                 INSERT OR IGNORE INTO service_dependencies (service_id, depends_on_id)
                 VALUES (?, ?)
@@ -240,7 +265,8 @@ class SqliteProjectStore(ProjectStoreBase):
 
     def get_service(self, service_id: str) -> Service | None:
         """Get a service by its ID."""
-        row = self.connection.execute("SELECT * FROM services WHERE id = ?", (service_id,)).fetchone()
+        with self._db_lock:
+            row = self._conn().execute("SELECT * FROM services WHERE id = ?", (service_id,)).fetchone()
 
         if not row:
             return None
@@ -249,20 +275,26 @@ class SqliteProjectStore(ProjectStoreBase):
 
     def get_services_for_project(self, project_id: str) -> list[Service]:
         """Get all services for a project."""
-        rows = self.connection.execute(
-            "SELECT * FROM services WHERE project_id = ? ORDER BY name",
-            (project_id,),
-        ).fetchall()
+        with self._db_lock:
+            rows = (
+                self._conn()
+                .execute(
+                    "SELECT * FROM services WHERE project_id = ? ORDER BY name",
+                    (project_id,),
+                )
+                .fetchall()
+            )
 
         return [self._row_to_service(row) for row in rows]
 
     def delete_service(self, service_id: str) -> bool:
         """Delete a service."""
-        cursor = self.connection.execute("DELETE FROM services WHERE id = ?", (service_id,))
-        self.connection.commit()
-        deleted = cursor.rowcount > 0
+        with self._db_lock:
+            cursor = self._conn().execute("DELETE FROM services WHERE id = ?", (service_id,))
+            self._conn().commit()
+            deleted = cursor.rowcount > 0
         if deleted:
-            logger.debug(f"Deleted service: {service_id}")
+            logger.debug("Deleted service: %s", service_id)
         return deleted
 
     def get_dependent_services(self, service_id: str) -> list[Service]:
@@ -276,15 +308,20 @@ class SqliteProjectStore(ProjectStoreBase):
         Returns:
             List of services that depend on the given service
         """
-        rows = self.connection.execute(
-            """
-            SELECT s.* FROM services s
-            INNER JOIN service_dependencies sd ON s.id = sd.service_id
-            WHERE sd.depends_on_id = ?
-            ORDER BY s.name
-            """,
-            (service_id,),
-        ).fetchall()
+        with self._db_lock:
+            rows = (
+                self._conn()
+                .execute(
+                    """
+                SELECT s.* FROM services s
+                INNER JOIN service_dependencies sd ON s.id = sd.service_id
+                WHERE sd.depends_on_id = ?
+                ORDER BY s.name
+                """,
+                    (service_id,),
+                )
+                .fetchall()
+            )
 
         return [self._row_to_service(row) for row in rows]
 
@@ -295,45 +332,51 @@ class SqliteProjectStore(ProjectStoreBase):
 
         Marks any previous active deployments for the same service as 'superseded'.
         """
-        self.connection.execute(
-            """
-            UPDATE deployments SET status = 'superseded'
-            WHERE service_id = ? AND status = 'active'
-            """,
-            (deployment.service_id,),
-        )
+        with self._db_lock:
+            self._conn().execute(
+                """
+                UPDATE deployments SET status = 'superseded'
+                WHERE service_id = ? AND status = 'active'
+                """,
+                (deployment.service_id,),
+            )
 
-        self.connection.execute(
-            """
-            INSERT INTO deployments
-            (id, service_id, platform, url, dashboard_url, deployed_at, config, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                deployment.id,
-                deployment.service_id,
-                deployment.platform,
-                deployment.url,
-                deployment.dashboard_url,
-                self._serialize_datetime(deployment.deployed_at),
-                json.dumps(deployment.config),
-                deployment.status,
-            ),
-        )
-        self.connection.commit()
-        logger.debug(f"Added deployment: {deployment.id} for service {deployment.service_id}")
+            self._conn().execute(
+                """
+                INSERT INTO deployments
+                (id, service_id, platform, url, dashboard_url, deployed_at, config, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    deployment.id,
+                    deployment.service_id,
+                    deployment.platform,
+                    deployment.url,
+                    deployment.dashboard_url,
+                    self._serialize_datetime(deployment.deployed_at),
+                    json.dumps(deployment.config),
+                    deployment.status,
+                ),
+            )
+            self._conn().commit()
+        logger.debug("Added deployment: %s for service %s", deployment.id, deployment.service_id)
 
     def get_active_deployment(self, service_id: str) -> Deployment | None:
         """Get the active deployment for a service."""
-        row = self.connection.execute(
-            """
-            SELECT * FROM deployments
-            WHERE service_id = ? AND status = 'active'
-            ORDER BY deployed_at DESC
-            LIMIT 1
-            """,
-            (service_id,),
-        ).fetchone()
+        with self._db_lock:
+            row = (
+                self._conn()
+                .execute(
+                    """
+                SELECT * FROM deployments
+                WHERE service_id = ? AND status = 'active'
+                ORDER BY deployed_at DESC
+                LIMIT 1
+                """,
+                    (service_id,),
+                )
+                .fetchone()
+            )
 
         if not row:
             return None
@@ -342,14 +385,19 @@ class SqliteProjectStore(ProjectStoreBase):
 
     def get_deployments_for_service(self, service_id: str) -> list[Deployment]:
         """Get all deployments for a service, ordered by deployed_at desc."""
-        rows = self.connection.execute(
-            """
-            SELECT * FROM deployments
-            WHERE service_id = ?
-            ORDER BY deployed_at DESC
-            """,
-            (service_id,),
-        ).fetchall()
+        with self._db_lock:
+            rows = (
+                self._conn()
+                .execute(
+                    """
+                SELECT * FROM deployments
+                WHERE service_id = ?
+                ORDER BY deployed_at DESC
+                """,
+                    (service_id,),
+                )
+                .fetchall()
+            )
 
         return [self._row_to_deployment(row) for row in rows]
 

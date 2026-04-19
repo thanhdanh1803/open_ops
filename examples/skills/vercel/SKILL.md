@@ -1,8 +1,9 @@
 ---
 name: vercel
 description: Deploy frontend applications to Vercel using the Vercel CLI
-version: 2.0.0
-author: OpenOps Team
+metadata:
+  version: 2.0.0
+  author: OpenOps Team
 risk_level: write
 platforms:
   - vercel
@@ -25,47 +26,31 @@ Use this skill when:
 
 ### 1. CLI Installation
 
-```bash
-npm install -g vercel
-```
-
 Verify installation:
 ```bash
 vercel --version
 ```
 
+```bash
+npm install -g vercel
+```
+
+
 ### 2. Authentication
 
 The user must be logged in to Vercel CLI:
-
-```bash
-vercel login
-```
-
-This opens a browser for authentication. After login, credentials are stored locally.
-
-Non-interactive alternative (when the user provides a token in the environment):
-- `VERCEL_TOKEN` (recommended for CI/automation when available)
 
 To check auth status:
 ```bash
 vercel whoami
 ```
 
-**Expected output (authenticated):**
+```bash
+vercel login
 ```
-> user@example.com
-```
+If `VERCEL_TOKEN` is provided, above command will login through non-interactive mode.
 
-**Expected output (not authenticated):**
-```
-Error: Not authenticated. Please run `vercel login`.
-```
-
-If not authenticated:
-1. Ask user for permission to authenticate
-2. If **no `VERCEL_TOKEN` is available** (common in local agent shells), run `vercel login` in **interactive mode** (tmux) so the user can complete any browser/device prompts reliably
-3. Wait for authentication to complete, then verify with `vercel whoami`
+Else, this's required to be ran in interactive mode to open the browser to authorize.
 
 ## Supported Frameworks
 
@@ -191,29 +176,10 @@ If `vercel.json` exists, validate it. Common structure:
 }
 ```
 
-### 2.5. Check CLI Installation
+If there are any placeholder-like or missing value (such as backend url, ...), figure out it by yourself from project analysis and deployment history.
 
-```bash
-vercel --version
-```
 
-If CLI not installed:
-1. Ask user for permission to install
-2. Execute: `npm install -g vercel`
-3. Verify installation with `vercel --version`
-
-### 3. Check Authentication
-
-```bash
-vercel whoami
-```
-
-If not authenticated:
-1. Ask user for permission to authenticate
-2. If **no `VERCEL_TOKEN` is available**, run `vercel login` in **interactive mode** (tmux) so the user can complete the login flow
-3. Verify with `vercel whoami` after completion
-
-### 4. Deploy
+### 3. Deploy
 
 ```bash
 cd /path/to/project
