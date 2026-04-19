@@ -6,6 +6,7 @@ API key configuration, and platform credential setup.
 
 import logging
 import os
+import sys
 from typing import Annotated
 
 import typer
@@ -15,6 +16,7 @@ from rich.prompt import Confirm, Prompt
 
 from openops.cli.main import app
 from openops.config import OPENOPS_ENV_FILE, get_config
+from openops.utils.command_runner import add_find_skills_global, ensure_npx, ensure_tmux
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -248,14 +250,6 @@ def init_cmd(
             help="LLM provider to use (anthropic, openai, google, deepseek).",
         ),
     ] = None,
-    non_interactive: Annotated[
-        bool,
-        typer.Option(
-            "--non-interactive",
-            "-y",
-            help="Non-interactive mode (use defaults).",
-        ),
-    ] = False,
 ) -> None:
     """Initialize OpenOps configuration.
 
@@ -268,7 +262,7 @@ def init_cmd(
 
         openops init --provider anthropic   # Quick setup with provider
 
-        openops init -y                     # Non-interactive with defaults
+        openops init                        # Interactive setup (required)
     """
     console.print(
         Panel(
@@ -278,51 +272,56 @@ def init_cmd(
         )
     )
 
+    console.print()
+    console.print("[bold]Step 0: Prerequisites[/bold]")
+    console.print()
+
+    if sys.platform not in ("darwin",) and not sys.platform.startswith("linux"):
+        console.print(
+            "[yellow]Note:[/yellow] Automatic installs during init are currently implemented for macOS and Linuxbrew."
+        )
+
+    if not ensure_tmux(console=console):
+        raise typer.Exit(1)
+
+    if not ensure_npx(console=console):
+        raise typer.Exit(1)
+
+    if not add_find_skills_global(console=console):
+        raise typer.Exit(1)
+
     env_vars: dict[str, str] = {}
 
-    if non_interactive:
-        if provider:
+    if provider:
+        env_var_names = {
+            "anthropic": "ANTHROPIC_API_KEY",
+            "openai": "OPENAI_API_KEY",
+            "google": "GOOGLE_API_KEY",
+            "deepseek": "DEEPSEEK_API_KEY",
+        }
+        if provider in env_var_names:
             env_vars["OPENOPS_MODEL_PROVIDER"] = provider
-            default_models = {
-                "anthropic": "claude-sonnet-4-6",
-                "openai": "gpt-5.4",
-                "google": "gemini-2.5-flash",
-                "deepseek": "deepseek-chat",
-            }
-            if provider in default_models:
-                env_vars["OPENOPS_MODEL_NAME"] = default_models[provider]
-        console.print("[dim]Non-interactive mode: using defaults[/dim]")
+
+            model_name = _select_model(provider)
+            env_vars["OPENOPS_MODEL_NAME"] = model_name
+
+            existing_key = os.environ.get(env_var_names[provider])
+            if not existing_key:
+                api_key = Prompt.ask(f"Enter your {provider.title()} API key", password=True)
+                env_vars[env_var_names[provider]] = api_key
     else:
-        if provider:
+        llm_result = _setup_llm_provider()
+        if llm_result:
+            llm_provider, model_name, api_key = llm_result
             env_var_names = {
                 "anthropic": "ANTHROPIC_API_KEY",
                 "openai": "OPENAI_API_KEY",
                 "google": "GOOGLE_API_KEY",
                 "deepseek": "DEEPSEEK_API_KEY",
             }
-            if provider in env_var_names:
-                env_vars["OPENOPS_MODEL_PROVIDER"] = provider
-
-                model_name = _select_model(provider)
-                env_vars["OPENOPS_MODEL_NAME"] = model_name
-
-                existing_key = os.environ.get(env_var_names[provider])
-                if not existing_key:
-                    api_key = Prompt.ask(f"Enter your {provider.title()} API key", password=True)
-                    env_vars[env_var_names[provider]] = api_key
-        else:
-            llm_result = _setup_llm_provider()
-            if llm_result:
-                llm_provider, model_name, api_key = llm_result
-                env_var_names = {
-                    "anthropic": "ANTHROPIC_API_KEY",
-                    "openai": "OPENAI_API_KEY",
-                    "google": "GOOGLE_API_KEY",
-                    "deepseek": "DEEPSEEK_API_KEY",
-                }
-                env_vars["OPENOPS_MODEL_PROVIDER"] = llm_provider
-                env_vars["OPENOPS_MODEL_NAME"] = model_name
-                env_vars[env_var_names[llm_provider]] = api_key
+            env_vars["OPENOPS_MODEL_PROVIDER"] = llm_provider
+            env_vars["OPENOPS_MODEL_NAME"] = model_name
+            env_vars[env_var_names[llm_provider]] = api_key
 
     if env_vars:
         _write_env_file(env_vars)

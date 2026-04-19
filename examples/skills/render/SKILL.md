@@ -1,8 +1,9 @@
 ---
 name: render
 description: Deploy web services, static sites, and workers to Render using the Render CLI
-version: 2.0.0
-author: OpenOps Team
+metadata:
+  version: 2.1.0
+  author: OpenOps Team
 risk_level: write
 platforms:
   - render
@@ -26,38 +27,63 @@ Use this skill when:
 
 ### 1. CLI Installation
 
+Verify installation:
+
+```bash
+render --version
+```
+
+To install Render CLI
+
 ```bash
 npm install -g @render-oss/cli
 ```
 
 Or using Homebrew (macOS):
+
 ```bash
 brew install render
 ```
 
-Verify installation:
-```bash
-render --version
-```
-
 ### 2. Authentication
 
-Set up an API key for CLI access:
+Render CLI uses an API key for non-interactive authentication or browser for interactive mode.
 
-1. Go to https://dashboard.render.com/u/settings#api-keys
-2. Create a new API key
-3. Set it as environment variable:
+To check login status, run
 
 ```bash
-export RENDER_API_KEY=rnd_xxxxxxxxxxxxx
+render whoami
 ```
 
-Or configure in CLI:
+If user has not authenticated (which raise an error of `Error: failed to create client: run `render login` to authenticate`), run this command in interactive mode:
+
 ```bash
-render config set api-key rnd_xxxxxxxxxxxxx
+render login
 ```
 
-To verify authentication:
+#### Agent workflow (preferred): verify → configure via CLI → verify
+
+```bash
+render services list
+```
+
+If not authenticated, the CLI typically returns:
+
+```
+Error: No API key configured. Set RENDER_API_KEY or run 'render config set api-key'
+```
+
+Resolve authentication as an agent:
+
+1. Ask the user to provide a Render API key (they can create one at `https://dashboard.render.com/u/settings#api-keys`).
+2. Configure the key via CLI (non-interactive):
+
+```bash
+render config set api-key <api_key>
+```
+
+3. Verify authentication:
+
 ```bash
 render services list
 ```
@@ -73,16 +99,19 @@ render services list
 └──────────────────┴────────────────┴──────────┴──────────────────────────┘
 ```
 
-**Expected output (not authenticated):**
-```
-Error: No API key configured. Set RENDER_API_KEY or run 'render config set api-key'
+#### Alternative (CI / env-based): `RENDER_API_KEY`
+
+If the user provides the key as an environment variable (e.g. in CI), ensure it is set:
+
+```bash
+export RENDER_API_KEY=<api_key>
 ```
 
-If not authenticated:
-1. Inform user that Render requires an API key from the dashboard
-2. Offer to open the API key page: https://dashboard.render.com/u/settings#api-keys
-3. Once user provides the API key, execute: `render config set api-key <key>`
-4. Verify with `render services list`
+Then verify with:
+
+```bash
+render services list
+```
 
 ## Supported Service Types
 
@@ -106,6 +135,24 @@ Render auto-detects and builds:
 | Flask | Python | `pip install -r requirements.txt` | `gunicorn app:app` |
 | Go | Go | `go build -o app` | `./app` |
 | Rust | Rust | `cargo build --release` | `./target/release/app` |
+
+## Render Concepts
+
+### Services
+
+Deployable units in Render. Common types:
+- **Web service**: HTTP server with a public URL
+- **Static site**: static hosting for built assets
+- **Background worker**: process without inbound HTTP
+- **Private service**: internal-only service (no public ingress)
+
+### Deploys
+
+Each deploy is a build + release cycle for a service. You can trigger deploys via the CLI and check status/history.
+
+### Blueprints (`render.yaml`)
+
+Infrastructure-as-code definition for services/databases. The CLI can launch a blueprint to create resources.
 
 ## CLI Commands
 
@@ -148,6 +195,7 @@ render deploys create --service-id srv-xxxxxxxxxxxxx
 ```
 
 Or by service name:
+
 ```bash
 render deploys create --service-name my-api
 ```
@@ -231,11 +279,13 @@ render services list
 
 If error about API key:
 1. Inform user that Render requires an API key from the dashboard
-2. Open or direct to: https://dashboard.render.com/u/settings#api-keys
+2. Open or direct to: `https://dashboard.render.com/u/settings#api-keys`
 3. Once user provides the API key, execute: `render config set api-key <key>`
 4. Verify with `render services list`
 
-### 2. List Existing Services
+### 2. List existing services and get user selection
+
+As an agent, prefer an explicit **list → user chooses → act** workflow to avoid guessing the target service.
 
 ```bash
 render services list
@@ -359,7 +409,7 @@ Agent: [executes: npm install -g @render-oss/cli]
 Agent: "CLI installed. Checking authentication..."
 Agent: [executes: render services list]
 Agent: "Render requires an API key. Please create one at:
-https://dashboard.render.com/u/settings#api-keys
+`https://dashboard.render.com/u/settings#api-keys`
 Then share the key with me."
 User: "Here it is: rnd_xxxxxxxxxxxxx"
 Agent: [executes: render config set api-key rnd_xxxxxxxxxxxxx]
