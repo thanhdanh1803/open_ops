@@ -8,6 +8,7 @@ allowing for testing with mocks and flexibility in storage backends.
 import logging
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from langchain_core.tools import tool
@@ -18,7 +19,8 @@ from openops.agent.interactive_tmux import (
 from openops.agent.interactive_tmux import (
     interactive_execute_tmux as _interactive_execute_tmux,
 )
-from openops.models import Deployment, Project, Service
+from openops.agent.tracing import observe
+from openops.models import Deployment, MonitoringPrefs, Project, Service
 from openops.storage.base import ProjectStoreBase
 
 logger = logging.getLogger(__name__)
@@ -36,7 +38,8 @@ def create_project_knowledge_tools(
         List of LangChain tools for project knowledge operations
     """
 
-    @tool
+    @tool("query_project_knowledge")
+    @observe(name="tool.query_project_knowledge")
     def query_project_knowledge(project_path: str) -> dict[str, Any]:
         """Query stored knowledge about a project.
 
@@ -116,7 +119,8 @@ def create_project_knowledge_tools(
             ],
         }
 
-    @tool
+    @tool("save_project_knowledge")
+    @observe(name="tool.save_project_knowledge")
     def save_project_knowledge(
         project_path: str,
         project_name: str,
@@ -205,7 +209,8 @@ def create_project_knowledge_tools(
             "service_ids": service_ids,
         }
 
-    @tool
+    @tool("record_deployment")
+    @observe(name="tool.record_deployment")
     def record_deployment(
         service_id: str,
         platform: str,
@@ -264,7 +269,8 @@ def create_project_knowledge_tools(
             "dashboard_url": dashboard_url,
         }
 
-    @tool
+    @tool("list_projects")
+    @observe(name="tool.list_projects")
     def list_projects() -> dict[str, Any]:
         """List all known projects.
 
@@ -298,10 +304,277 @@ def create_project_knowledge_tools(
     ]
 
 
+def create_monitoring_tools(store: ProjectStoreBase) -> list:
+    """Tools to enable or inspect background log monitoring (daemon reads prefs)."""
+
+    @tool("set_project_monitoring")
+    @observe(name="tool.set_project_monitoring")
+    def set_project_monitoring(project_path: str, enabled: bool, interval_seconds: int = 300) -> dict[str, Any]:
+        """Enable or disable background monitoring for a project.
+
+        Persists preferences for the ``openops monitor`` daemon. When enabling,
+        attempts to start the daemon subprocess if it is not already running.
+
+        Args:
+            project_path: Absolute path to the project root
+            enabled: Whether background monitoring should run
+            interval_seconds: Minimum seconds between daemon checks (default 300, minimum 60)
+
+        Returns:
+            Result with success flag and human-facing message
+        """
+        path = str(Path(project_path).expanduser().resolve())
+        interval = max(60, int(interval_seconds))
+        logger.info("set_project_monitoring path=%s enabled=%s interval=%s", path, enabled, interval)
+
+        prefs = MonitoringPrefs(
+            project_path=path,
+            enabled=enabled,
+            interval_seconds=interval,
+            updated_at=datetime.now(),
+        )
+        store.upsert_monitoring_prefs(prefs)
+
+        if not enabled:
+            return {
+                "success": True,
+                "enabled": False,
+                "message": "Background monitoring disabled for this project (daemon will skip it on next poll).",
+            }
+
+        from openops.cli.monitor_daemon import try_start_daemon_subprocess
+
+        started, start_message = try_start_daemon_subprocess()
+        logger.debug("Daemon auto-start: started=%s msg=%s", started, start_message)
+        msg = (
+            "Background monitoring enabled. The daemon polls on the interval you set and delegates "
+            "log checks to the monitor-agent. "
+        )
+        if started:
+            msg += start_message
+        else:
+            msg += f"{start_message} You can start it anytime with: openops monitor start"
+        return {
+            "success": True,
+            "enabled": True,
+            "interval_seconds": interval,
+            "message": msg,
+        }
+
+    @tool("get_project_monitoring")
+    @observe(name="tool.get_project_monitoring")
+    def get_project_monitoring(project_path: str) -> dict[str, Any]:
+        """Return stored monitoring preferences for a project path, if any."""
+        path = str(Path(project_path).expanduser().resolve())
+        logger.debug("get_project_monitoring path=%s", path)
+        row = store.get_monitoring_prefs(path)
+        if not row:
+            return {
+                "found": False,
+                "project_path": path,
+                "message": "No monitoring preferences stored for this path.",
+            }
+        return {
+            "found": True,
+            "project_path": row.project_path,
+            "enabled": row.enabled,
+            "interval_seconds": row.interval_seconds,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+            "last_run_at": row.last_run_at.isoformat() if row.last_run_at else None,
+            "last_error": row.last_error or None,
+        }
+
+    return [set_project_monitoring, get_project_monitoring]
+
+
+def create_monitoring_query_tools(store: ProjectStoreBase) -> list:
+    """Read-only tools for monitoring analysis and service relationship traversal."""
+
+    @tool("list_project_services")
+    @observe(name="tool.list_project_services")
+    def list_project_services(project_path: str) -> dict[str, Any]:
+        """List project services with active deployment and dependency metadata."""
+        path = str(Path(project_path).expanduser().resolve())
+        logger.debug("list_project_services path=%s", path)
+        project = store.get_project(path)
+        if not project:
+            return {
+                "found": False,
+                "project": None,
+                "services": [],
+                "message": f"No project found at {path}",
+            }
+
+        services = store.get_services_for_project(project.id)
+        payload: list[dict[str, Any]] = []
+        for service in services:
+            active_deployment = store.get_active_deployment(service.id)
+            payload.append(
+                {
+                    "service": {
+                        "id": service.id,
+                        "name": service.name,
+                        "path": service.path,
+                        "type": service.type,
+                        "framework": service.framework,
+                        "language": service.language,
+                        "dependencies": list(service.dependencies),
+                    },
+                    "active_deployment": (
+                        {
+                            "id": active_deployment.id,
+                            "platform": active_deployment.platform,
+                            "url": active_deployment.url,
+                            "dashboard_url": active_deployment.dashboard_url,
+                            "deployed_at": (
+                                active_deployment.deployed_at.isoformat() if active_deployment.deployed_at else None
+                            ),
+                            "status": active_deployment.status,
+                        }
+                        if active_deployment
+                        else None
+                    ),
+                }
+            )
+
+        return {
+            "found": True,
+            "project": {
+                "id": project.id,
+                "name": project.name,
+                "path": project.path,
+            },
+            "services": payload,
+        }
+
+    @tool("get_service_dependents")
+    @observe(name="tool.get_service_dependents")
+    def get_service_dependents(service_id: str) -> dict[str, Any]:
+        """Return services that depend on the given service (reverse dependencies)."""
+        logger.debug("get_service_dependents service_id=%s", service_id)
+        service = store.get_service(service_id)
+        if not service:
+            return {
+                "found": False,
+                "service_id": service_id,
+                "dependents": [],
+                "message": f"Service not found: {service_id}",
+            }
+
+        dependents: list = []
+        get_dependents_fn = getattr(store, "get_dependent_services", None)
+        if callable(get_dependents_fn):
+            dependents = get_dependents_fn(service_id)
+        else:
+            for candidate in store.get_services_for_project(service.project_id):
+                if service_id in candidate.dependencies:
+                    dependents.append(candidate)
+
+        return {
+            "found": True,
+            "service_id": service_id,
+            "dependents": [
+                {
+                    "id": dep.id,
+                    "name": dep.name,
+                    "path": dep.path,
+                    "type": dep.type,
+                    "framework": dep.framework,
+                    "language": dep.language,
+                }
+                for dep in dependents
+            ],
+        }
+
+    @tool("get_active_deployment")
+    @observe(name="tool.get_active_deployment")
+    def get_active_deployment(service_id: str) -> dict[str, Any]:
+        """Get current active deployment details for a service, if any."""
+        logger.debug("get_active_deployment service_id=%s", service_id)
+        service = store.get_service(service_id)
+        if not service:
+            return {
+                "found": False,
+                "service_id": service_id,
+                "deployment": None,
+                "message": f"Service not found: {service_id}",
+            }
+
+        deployment = store.get_active_deployment(service_id)
+        if not deployment:
+            return {
+                "found": True,
+                "service_id": service_id,
+                "deployment": None,
+                "message": "No active deployment for this service.",
+            }
+
+        return {
+            "found": True,
+            "service_id": service_id,
+            "deployment": {
+                "id": deployment.id,
+                "platform": deployment.platform,
+                "url": deployment.url,
+                "dashboard_url": deployment.dashboard_url,
+                "deployed_at": deployment.deployed_at.isoformat() if deployment.deployed_at else None,
+                "status": deployment.status,
+                "config": deployment.config,
+            },
+        }
+
+    @tool("get_recent_deployments")
+    @observe(name="tool.get_recent_deployments")
+    def get_recent_deployments(service_id: str, limit: int = 5) -> dict[str, Any]:
+        """Get recent deployments for a service (most recent first)."""
+        logger.debug("get_recent_deployments service_id=%s limit=%s", service_id, limit)
+        service = store.get_service(service_id)
+        if not service:
+            return {
+                "found": False,
+                "service_id": service_id,
+                "deployments": [],
+                "message": f"Service not found: {service_id}",
+            }
+
+        normalized_limit = max(1, min(int(limit), 50))
+        deployments = store.get_deployments_for_service(service_id)
+        deployments_sorted = sorted(
+            deployments,
+            key=lambda d: d.deployed_at or datetime.min,
+            reverse=True,
+        )
+
+        return {
+            "found": True,
+            "service_id": service_id,
+            "deployments": [
+                {
+                    "id": dep.id,
+                    "platform": dep.platform,
+                    "url": dep.url,
+                    "dashboard_url": dep.dashboard_url,
+                    "deployed_at": dep.deployed_at.isoformat() if dep.deployed_at else None,
+                    "status": dep.status,
+                    "config": dep.config,
+                }
+                for dep in deployments_sorted[:normalized_limit]
+            ],
+        }
+
+    return [
+        list_project_services,
+        get_service_dependents,
+        get_active_deployment,
+        get_recent_deployments,
+    ]
+
+
 def create_interactive_tools() -> list:
     """Create tools for handling interactive commands (local tmux)."""
 
-    @tool
+    @tool("interactive_execute_tmux")
+    @observe(name="tool.interactive_execute_tmux")
     def interactive_execute_tmux(command: str, timeout_s: float = 1800.0) -> dict[str, Any]:
         """Run an interactive command in tmux and return a transcript.
 
@@ -335,4 +608,9 @@ def create_interactive_tools() -> list:
     return [interactive_execute_tmux]
 
 
-__all__ = ["create_project_knowledge_tools", "create_interactive_tools"]
+__all__ = [
+    "create_project_knowledge_tools",
+    "create_interactive_tools",
+    "create_monitoring_tools",
+    "create_monitoring_query_tools",
+]

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 
-class RiskLevel(str, Enum):
+class RiskLevel(str, Enum):  # noqa: UP042
     """Risk level for operations.
 
     Used for HITL approval decisions.
@@ -77,3 +77,48 @@ class MonitoringConfig(BaseModel):
     alert_channels: list[str] = Field(default_factory=list, description="Alert channel identifiers")
     thresholds: dict[str, Any] = Field(default_factory=dict, description="Alert thresholds")
     enabled: bool = Field(default=True, description="Whether monitoring is enabled")
+
+
+class MonitoringPrefs(BaseModel):
+    """Persisted preferences for the OpenOps background monitoring daemon."""
+
+    project_path: str = Field(description="Absolute path to the project directory")
+    enabled: bool = Field(default=False, description="Whether background monitoring is enabled")
+    interval_seconds: int = Field(default=300, ge=60, description="Daemon tick interval in seconds")
+    updated_at: datetime | None = Field(default=None, description="Last prefs update time")
+    last_run_at: datetime | None = Field(default=None, description="Last successful daemon tick")
+    last_error: str = Field(default="", description="Last daemon tick error message, if any")
+
+
+class FindingSeverity(str, Enum):  # noqa: UP042
+    """Severity level for monitoring findings."""
+
+    OK = "ok"
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
+
+
+class MonitoringFinding(BaseModel):
+    """A concrete issue (or notable condition) found during monitoring."""
+
+    service_name: str = Field(description="Service name where the issue appears")
+    service_id: str | None = Field(default=None, description="Service UUID if known")
+    severity: FindingSeverity = Field(description="Finding severity")
+    title: str = Field(description="Short title of the finding")
+    evidence: str = Field(description="Supporting evidence (log excerpt, error text, etc.)")
+    root_cause: str | None = Field(default=None, description="Likely root cause analysis")
+    suggested_fix: str | None = Field(default=None, description="Suggested remediation steps")
+    related_services: list[str] = Field(default_factory=list, description="Services involved in this issue")
+
+
+class MonitoringReport(BaseModel):
+    """Structured report emitted by the background monitoring agent."""
+
+    project_path: str = Field(description="Absolute project path monitored by this report")
+    project_id: str | None = Field(default=None, description="Project UUID if known")
+    generated_at: datetime = Field(description="Timestamp for report generation")
+    overall_status: FindingSeverity = Field(description="Overall project health status")
+    summary: str = Field(description="Brief summary across all findings")
+    findings: list[MonitoringFinding] = Field(default_factory=list, description="Detailed findings list")
+    services_checked: list[str] = Field(default_factory=list, description="Services inspected during this run")

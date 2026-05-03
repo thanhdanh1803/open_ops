@@ -2,8 +2,9 @@
 
 import logging
 from abc import ABC, abstractmethod
+from datetime import datetime
 
-from openops.models import Deployment, Project, Service
+from openops.models import Deployment, MonitoringPrefs, Project, Service
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +150,28 @@ class ProjectStoreBase(ABC):
             List of all deployments for the service, ordered by deployed_at desc
         """
         pass
+
+    @abstractmethod
+    def upsert_monitoring_prefs(self, prefs: MonitoringPrefs) -> None:
+        """Insert or update monitoring preferences for a project path."""
+
+    @abstractmethod
+    def get_monitoring_prefs(self, project_path: str) -> MonitoringPrefs | None:
+        """Return monitoring preferences for a project path, or None if absent."""
+
+    @abstractmethod
+    def list_enabled_monitoring_prefs(self) -> list[MonitoringPrefs]:
+        """Return all monitoring preference rows where enabled is true."""
+
+    @abstractmethod
+    def touch_monitoring_run(
+        self,
+        project_path: str,
+        *,
+        last_run_at: datetime | None = None,
+        last_error: str | None = None,
+    ) -> None:
+        """Update last_run_at and/or last_error for a prefs row."""
 
     def get_project_summary(self, path: str) -> dict | None:
         """Get full project summary with services and deployments.

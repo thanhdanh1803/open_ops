@@ -1,10 +1,11 @@
 """Tests for SqliteProjectStore."""
 
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
-from openops.models import Deployment, Project, Service
+from openops.models import Deployment, MonitoringPrefs, Project, Service
 from openops.storage.sqlite_store import SqliteProjectStore
 
 
@@ -474,6 +475,64 @@ class TestDeploymentOperations:
 
         deployments = store.get_deployments_for_service(sample_service.id)
         assert deployments == []
+
+
+class TestMonitoringPrefsOperations:
+    def test_upsert_get_and_list_enabled(self, store):
+        path = "/tmp/openops_monitor_test_project"
+        prefs = MonitoringPrefs(
+            project_path=path,
+            enabled=True,
+            interval_seconds=120,
+            updated_at=datetime(2026, 5, 3, 12, 0, 0),
+        )
+        store.upsert_monitoring_prefs(prefs)
+
+        row = store.get_monitoring_prefs(path)
+        assert row is not None
+        assert row.enabled is True
+        assert row.interval_seconds == 120
+
+        enabled_list = store.list_enabled_monitoring_prefs()
+        assert len(enabled_list) == 1
+        assert enabled_list[0].project_path == str(Path(path).resolve())
+
+    def test_upsert_preserves_last_run_metadata(self, store):
+        path = "/tmp/openops_monitor_preserves"
+        store.upsert_monitoring_prefs(
+            MonitoringPrefs(
+                project_path=path,
+                enabled=True,
+                interval_seconds=300,
+                updated_at=datetime(2026, 5, 3, 12, 0, 0),
+                last_run_at=datetime(2026, 5, 3, 11, 0, 0),
+                last_error="old",
+            )
+        )
+        store.upsert_monitoring_prefs(
+            MonitoringPrefs(
+                project_path=path,
+                enabled=False,
+                interval_seconds=600,
+                updated_at=datetime(2026, 5, 3, 13, 0, 0),
+            )
+        )
+        row = store.get_monitoring_prefs(path)
+        assert row.enabled is False
+        assert row.interval_seconds == 600
+        assert row.last_run_at == datetime(2026, 5, 3, 11, 0, 0)
+        assert row.last_error == "old"
+
+    def test_touch_monitoring_run(self, store):
+        path = "/tmp/openops_monitor_touch"
+        store.upsert_monitoring_prefs(
+            MonitoringPrefs(project_path=path, enabled=True, interval_seconds=300),
+        )
+        ts = datetime(2026, 5, 3, 14, 30, 0)
+        store.touch_monitoring_run(path, last_run_at=ts, last_error="")
+        row = store.get_monitoring_prefs(path)
+        assert row.last_run_at == ts
+        assert row.last_error == ""
 
 
 class TestProjectSummary:

@@ -1,9 +1,11 @@
 # OpenOps
 
-OpenOps is a Python CLI that pairs **LangGraph / LangChain** with a **Rich** terminal UI so you can chat with an agent about DevOps tasks—especially **analyzing repos and driving deployments** (for example Vercel, Railway, and Render) from your project directory.
+OpenOps is a Python CLI for running an **agentic DevOps assistant** from your terminal via a single entrypoint: **`openops chat`**.
 
-- **Python:** 3.11+
-- **Install:** editable install from this repo (see below)
+`openops chat` is built for **repository traversal**: it can move through your project (files, folders, and code paths), build understanding across modules, and help you plan and carry out DevOps work with your repo as the working context. Potentially dangerous actions can be routed through **human-in-the-loop approvals** in the TUI so execution stays explicit.
+
+- **Python**: 3.11+
+- **Install**: editable install from this repo (see below)
 
 ## Quick start
 
@@ -21,20 +23,18 @@ openops deploy               # agent-assisted deploy flow for the current projec
 openops deploy --dry-run     # inspect without applying
 ```
 
-Configure deployment tokens when prompted, or use `openops credentials add <platform>` after `init`. Global settings and encrypted credentials live under `~/.openops/` (see [docs/09-configuration.md](docs/09-configuration.md)).
 
 ## CLI overview
 
 | Command | Purpose |
 | --- | --- |
 | `openops init` | First-run wizard |
-| `openops chat` | Interactive assistant (optional `--model provider:model`) |
-| `openops deploy` | Deploy / dry-run with optional `--platform` |
-| `openops config …` | Show, get, set, reset, or print config path |
-| `openops credentials …` | List, add, remove, or test platform credentials |
+| `openops chat` | Interactive assistant (supports `--new`, `--model`) |
+| `openops deploy` | Deploy / dry-run (supports `--platform`, `--dry-run`, `--yes`, `--env-file`) |
+| `openops config …` | `show`, `get`, `set`, `reset`, `path` |
 | `openops doctor` | Health check |
 | `openops version` | Version and active model |
-| `openops monitor` | Placeholder for future monitoring |
+| `openops monitor` | Monitoring daemon (`start`, `stop`, `status`, `logs`) |
 
 Run `openops --help` or `openops <command> --help` for options.
 
@@ -45,7 +45,8 @@ Design and contributor material lives in [docs/](docs/):
 - [Architecture](docs/01-architecture.md)
 - [CLI and TUI](docs/04-cli-and-tui.md)
 - [Configuration](docs/09-configuration.md)
-- [Contributing](docs/11-contributing.md)
+- [Contributing](CONTRIBUTING.md)
+- [Roadmap](ROADMAP.md)
 
 ## Development
 

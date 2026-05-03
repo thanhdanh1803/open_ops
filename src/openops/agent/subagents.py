@@ -61,6 +61,7 @@ def create_project_analyzer_config(
 def create_deploy_agent_config(
     model: str | None = None,
     skills: list[str] | None = None,
+    additional_tools: list | None = None,
     interrupt_on_deploy: bool = True,
 ) -> dict[str, Any]:
     """Create configuration for the deploy agent subagent.
@@ -71,6 +72,7 @@ def create_deploy_agent_config(
     Args:
         model: Optional model override (defaults to main agent's model)
         skills: Skill directories to load (e.g., ["~/.openops/skills/vercel/"])
+        additional_tools: Additional tools to provide to deploy agent
         interrupt_on_deploy: Whether to require approval for deployments
 
     Returns:
@@ -79,6 +81,7 @@ def create_deploy_agent_config(
     logger.debug("Creating deploy agent config")
 
     platform_names = ", ".join(get_deployment_platform_names())
+    tools = additional_tools or []
 
     config: dict[str, Any] = {
         "name": "deploy-agent",
@@ -87,7 +90,7 @@ def create_deploy_agent_config(
             "Generates configs, validates settings, and executes deployments."
         ),
         "system_prompt": DEPLOY_AGENT_PROMPT,
-        "tools": [],
+        "tools": tools,
     }
 
     if model:
@@ -97,7 +100,9 @@ def create_deploy_agent_config(
         config["skills"] = skills
 
     if interrupt_on_deploy:
-        config["interrupt_on"] = build_interrupt_config()
+        interrupt_config = build_interrupt_config()
+        interrupt_config["skills_install"] = True
+        config["interrupt_on"] = interrupt_config
 
     return config
 
@@ -142,6 +147,7 @@ def create_all_subagents(
     model: str | None = None,
     skill_directories: list[str] | None = None,
     analyzer_tools: list | None = None,
+    deploy_tools: list | None = None,
     monitor_tools: list | None = None,
 ) -> list[dict[str, Any]]:
     """Create all subagent configurations.
@@ -152,6 +158,7 @@ def create_all_subagents(
         model: Model to use for all subagents (optional)
         skill_directories: Skill directories for deploy agent
         analyzer_tools: Additional tools for project analyzer
+        deploy_tools: Additional tools for deploy agent
         monitor_tools: Additional tools for monitor agent
 
     Returns:
@@ -165,6 +172,7 @@ def create_all_subagents(
         create_deploy_agent_config(
             model=model,
             skills=skill_directories,
+            additional_tools=deploy_tools,
         ),
         create_monitor_agent_config(
             model=model,

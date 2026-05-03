@@ -1,10 +1,11 @@
 """Tests for the base storage interface."""
 
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
-from openops.models import Deployment, Project, Service
+from openops.models import Deployment, MonitoringPrefs, Project, Service
 from openops.storage.base import ProjectStoreBase
 
 
@@ -15,6 +16,7 @@ class InMemoryStore(ProjectStoreBase):
         self._projects: dict[str, Project] = {}
         self._services: dict[str, Service] = {}
         self._deployments: dict[str, Deployment] = {}
+        self._monitoring: dict[str, MonitoringPrefs] = {}
 
     def upsert_project(self, project: Project) -> None:
         self._projects[project.id] = project
@@ -67,6 +69,39 @@ class InMemoryStore(ProjectStoreBase):
     def get_deployments_for_service(self, service_id: str) -> list[Deployment]:
         deployments = [d for d in self._deployments.values() if d.service_id == service_id]
         return sorted(deployments, key=lambda d: d.deployed_at or datetime.min, reverse=True)
+
+    def upsert_monitoring_prefs(self, prefs: MonitoringPrefs) -> None:
+        path = str(Path(prefs.project_path).resolve())
+        incoming = prefs.model_copy(update={"project_path": path})
+        if existing := self._monitoring.get(path):
+            incoming.last_run_at = existing.last_run_at
+            incoming.last_error = existing.last_error
+        self._monitoring[path] = incoming
+
+    def get_monitoring_prefs(self, project_path: str) -> MonitoringPrefs | None:
+        path = str(Path(project_path).resolve())
+        return self._monitoring.get(path)
+
+    def list_enabled_monitoring_prefs(self) -> list[MonitoringPrefs]:
+        return [p for p in self._monitoring.values() if p.enabled]
+
+    def touch_monitoring_run(
+        self,
+        project_path: str,
+        *,
+        last_run_at=None,
+        last_error: str | None = None,
+    ) -> None:
+        path = str(Path(project_path).resolve())
+        existing = self._monitoring.get(path)
+        if not existing:
+            return
+        kwargs = {}
+        if last_run_at is not None:
+            kwargs["last_run_at"] = last_run_at
+        if last_error is not None:
+            kwargs["last_error"] = last_error
+        self._monitoring[path] = existing.model_copy(update=kwargs)
 
 
 @pytest.fixture

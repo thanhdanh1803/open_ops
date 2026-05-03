@@ -57,3 +57,15 @@ CREATE INDEX IF NOT EXISTS idx_services_project ON services(project_id);
 CREATE INDEX IF NOT EXISTS idx_deployments_service ON deployments(service_id);
 CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status);
 CREATE INDEX IF NOT EXISTS idx_service_deps_depends_on ON service_dependencies(depends_on_id);
+
+-- Background monitoring preferences (daemon reads this table)
+CREATE TABLE IF NOT EXISTS project_monitoring_prefs (
+    project_path TEXT PRIMARY KEY,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    interval_seconds INTEGER NOT NULL DEFAULT 300,
+    updated_at DATETIME,
+    last_run_at DATETIME,
+    last_error TEXT DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_monitoring_prefs_enabled ON project_monitoring_prefs(enabled);

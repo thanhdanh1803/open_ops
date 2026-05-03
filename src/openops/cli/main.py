@@ -4,6 +4,7 @@ Provides the command-line interface using Typer with Rich formatting.
 """
 
 import logging
+import os
 import sys
 from typing import Annotated
 
@@ -22,6 +23,8 @@ from openops.exceptions import ConfigurationError, CredentialError, OpenOpsError
 
 console = Console()
 err_console = Console(stderr=True)
+
+logger = logging.getLogger(__name__)
 
 app = typer.Typer(
     name="openops",
@@ -154,26 +157,56 @@ def monitor(
         typer.Argument(help="Action: start, stop, status, logs"),
     ] = "status",
 ) -> None:
-    """Monitoring daemon (coming in Phase 2).
+    """Background monitoring daemon for enabled projects (log / error checks).
+
+    After a user enables monitoring in chat (**set_project_monitoring**), run
+    ``openops monitor start`` once so ticks continue outside **openops chat**.
 
     Actions:
-    - start: Start background monitoring daemon
-    - stop: Stop the daemon
-    - status: Check daemon status
-    - logs: Stream daemon logs
+    - start: Run the daemon (blocks; use nohup/systemd or auto-start from chat)
+    - stop: Stop a running daemon via SIGTERM
+    - status: Show whether the daemon is running
+    - logs: Print the tail of the daemon log file
     """
-    console.print(
-        Panel(
-            "[yellow]The monitoring feature is coming in Phase 2.[/yellow]\n\n"
-            "This will include:\n"
-            "• Background daemon for continuous monitoring\n"
-            "• Log streaming and aggregation\n"
-            "• Alerting and notifications\n"
-            "• Health check automation",
-            title="Coming Soon",
-            border_style="yellow",
-        )
+    from openops.cli.monitor_daemon import (
+        daemon_status_message,
+        ensure_single_instance_and_write_pid,
+        run_daemon_foreground,
+        stop_daemon,
+        tail_daemon_log,
     )
+
+    config = get_config()
+    config.ensure_data_dir()
+
+    act = action.lower().strip()
+    if act == "status":
+        console.print(daemon_status_message(config))
+        return
+    if act == "logs":
+        console.print(tail_daemon_log(config))
+        return
+    if act == "stop":
+        _ok, msg = stop_daemon(config)
+        console.print(msg)
+        return
+    if act == "start":
+        try:
+            ensure_single_instance_and_write_pid(config)
+        except RuntimeError as e:
+            show_error(e, hint="Stop the existing daemon with: openops monitor stop")
+            raise typer.Exit(1) from e
+        console.print(f"[green]Monitoring daemon starting[/green] (pid={os.getpid()})")
+        logger.info("Monitor daemon foreground loop starting")
+        try:
+            run_daemon_foreground(config)
+        except KeyboardInterrupt:
+            console.print("\n[dim]Monitor daemon interrupted[/dim]")
+            raise typer.Exit(130) from None
+        return
+
+    show_error(ValueError(f"Unknown action: {action!r}"), hint="Use: start | stop | status | logs")
+    raise typer.Exit(2)
 
 
 def _handle_cli_error(error: Exception) -> None:
