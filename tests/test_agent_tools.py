@@ -1,11 +1,12 @@
 """Tests for OpenOps custom tools."""
 
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
-from openops.agent.tools import create_project_knowledge_tools
-from openops.models import Deployment, Project, Service
+from openops.agent.tools import create_monitoring_query_tools, create_project_knowledge_tools
+from openops.models import Deployment, MonitoringPrefs, Project, Service
 from openops.storage.base import ProjectStoreBase
 
 
@@ -16,6 +17,7 @@ class MockProjectStore(ProjectStoreBase):
         self._projects: dict[str, Project] = {}
         self._services: dict[str, Service] = {}
         self._deployments: dict[str, list[Deployment]] = {}
+        self._monitoring: dict[str, MonitoringPrefs] = {}
 
     def upsert_project(self, project: Project) -> None:
         self._projects[project.id] = project
@@ -72,6 +74,42 @@ class MockProjectStore(ProjectStoreBase):
     def get_deployments_for_service(self, service_id: str) -> list[Deployment]:
         return self._deployments.get(service_id, [])
 
+    def get_dependent_services(self, service_id: str) -> list[Service]:
+        return [s for s in self._services.values() if service_id in s.dependencies]
+
+    def upsert_monitoring_prefs(self, prefs: MonitoringPrefs) -> None:
+        path = str(Path(prefs.project_path).resolve())
+        incoming = prefs.model_copy(update={"project_path": path})
+        if existing := self._monitoring.get(path):
+            incoming.last_run_at = existing.last_run_at
+            incoming.last_error = existing.last_error
+        self._monitoring[path] = incoming
+
+    def get_monitoring_prefs(self, project_path: str) -> MonitoringPrefs | None:
+        path = str(Path(project_path).resolve())
+        return self._monitoring.get(path)
+
+    def list_enabled_monitoring_prefs(self) -> list[MonitoringPrefs]:
+        return [p for p in self._monitoring.values() if p.enabled]
+
+    def touch_monitoring_run(
+        self,
+        project_path: str,
+        *,
+        last_run_at=None,
+        last_error: str | None = None,
+    ) -> None:
+        path = str(Path(project_path).resolve())
+        existing = self._monitoring.get(path)
+        if not existing:
+            return
+        kwargs = {}
+        if last_run_at is not None:
+            kwargs["last_run_at"] = last_run_at
+        if last_error is not None:
+            kwargs["last_error"] = last_error
+        self._monitoring[path] = existing.model_copy(update=kwargs)
+
 
 @pytest.fixture
 def mock_store():
@@ -81,6 +119,11 @@ def mock_store():
 @pytest.fixture
 def tools(mock_store):
     return create_project_knowledge_tools(mock_store)
+
+
+@pytest.fixture
+def monitoring_tools(mock_store):
+    return create_monitoring_query_tools(mock_store)
 
 
 class TestQueryProjectKnowledge:
@@ -256,3 +299,91 @@ class TestListProjects:
 
         assert result["count"] == 3
         assert len(result["projects"]) == 3
+
+
+class TestMonitoringQueryTools:
+    def test_list_project_services(self, monitoring_tools, mock_store):
+        project = Project(id="proj-1", path="/proj", name="proj")
+        mock_store.upsert_project(project)
+        service = Service(
+            id="svc-1",
+            project_id=project.id,
+            name="api",
+            path="api",
+            dependencies=[],
+        )
+        mock_store.upsert_service(service)
+        mock_store.add_deployment(
+            Deployment(
+                id="dep-1",
+                service_id=service.id,
+                platform="vercel",
+                status="active",
+                deployed_at=datetime.now(),
+            )
+        )
+
+        result = monitoring_tools[0].invoke({"project_path": "/proj"})
+
+        assert result["found"] is True
+        assert result["project"]["id"] == "proj-1"
+        assert len(result["services"]) == 1
+        assert result["services"][0]["active_deployment"]["platform"] == "vercel"
+
+    def test_get_service_dependents(self, monitoring_tools, mock_store):
+        project = Project(id="proj-2", path="/proj2", name="proj2")
+        mock_store.upsert_project(project)
+        db = Service(id="svc-db", project_id=project.id, name="db", path="db")
+        api = Service(
+            id="svc-api",
+            project_id=project.id,
+            name="api",
+            path="api",
+            dependencies=["svc-db"],
+        )
+        mock_store.upsert_service(db)
+        mock_store.upsert_service(api)
+
+        result = monitoring_tools[1].invoke({"service_id": "svc-db"})
+
+        assert result["found"] is True
+        assert len(result["dependents"]) == 1
+        assert result["dependents"][0]["id"] == "svc-api"
+
+    def test_get_active_deployment(self, monitoring_tools, mock_store):
+        service = Service(id="svc-x", project_id="proj-x", name="worker", path="worker")
+        mock_store.upsert_service(service)
+        mock_store.add_deployment(
+            Deployment(
+                id="dep-x",
+                service_id="svc-x",
+                platform="railway",
+                status="active",
+                deployed_at=datetime.now(),
+                url="https://example.com",
+            )
+        )
+
+        result = monitoring_tools[2].invoke({"service_id": "svc-x"})
+
+        assert result["found"] is True
+        assert result["deployment"]["platform"] == "railway"
+        assert result["deployment"]["url"] == "https://example.com"
+
+    def test_get_recent_deployments_limit(self, monitoring_tools, mock_store):
+        service = Service(id="svc-y", project_id="proj-y", name="web", path="web")
+        mock_store.upsert_service(service)
+        for i in range(3):
+            mock_store.add_deployment(
+                Deployment(
+                    id=f"dep-{i}",
+                    service_id="svc-y",
+                    platform="vercel",
+                    status="active" if i == 2 else "superseded",
+                    deployed_at=datetime.now(),
+                )
+            )
+
+        result = monitoring_tools[3].invoke({"service_id": "svc-y", "limit": 2})
+        assert result["found"] is True
+        assert len(result["deployments"]) == 2

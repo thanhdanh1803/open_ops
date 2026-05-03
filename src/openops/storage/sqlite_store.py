@@ -7,7 +7,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-from openops.models import Deployment, Project, Service
+from openops.models import Deployment, MonitoringPrefs, Project, Service
 from openops.storage.base import ProjectStoreBase
 
 logger = logging.getLogger(__name__)
@@ -400,6 +400,114 @@ class SqliteProjectStore(ProjectStoreBase):
             )
 
         return [self._row_to_deployment(row) for row in rows]
+
+    def _row_to_monitoring_prefs(self, row: sqlite3.Row) -> MonitoringPrefs:
+        """Convert a database row to MonitoringPrefs."""
+        return MonitoringPrefs(
+            project_path=row["project_path"],
+            enabled=bool(row["enabled"]),
+            interval_seconds=int(row["interval_seconds"]),
+            updated_at=self._deserialize_datetime(row["updated_at"]),
+            last_run_at=self._deserialize_datetime(row["last_run_at"]),
+            last_error=(row["last_error"] or ""),
+        )
+
+    def upsert_monitoring_prefs(self, prefs: MonitoringPrefs) -> None:
+        """Insert or update monitoring preferences."""
+        path = str(Path(prefs.project_path).resolve())
+        now = datetime.now()
+        updated_at = prefs.updated_at or now
+        with self._db_lock:
+            self._conn().execute(
+                """
+                INSERT INTO project_monitoring_prefs
+                    (project_path, enabled, interval_seconds, updated_at, last_run_at, last_error)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(project_path) DO UPDATE SET
+                    enabled = excluded.enabled,
+                    interval_seconds = excluded.interval_seconds,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    path,
+                    1 if prefs.enabled else 0,
+                    prefs.interval_seconds,
+                    self._serialize_datetime(updated_at),
+                    self._serialize_datetime(prefs.last_run_at),
+                    prefs.last_error or "",
+                ),
+            )
+            self._conn().commit()
+        logger.debug("Upserted monitoring prefs for %s (enabled=%s)", path, prefs.enabled)
+
+    def get_monitoring_prefs(self, project_path: str) -> MonitoringPrefs | None:
+        """Return monitoring preferences for a project path."""
+        path = str(Path(project_path).resolve())
+        with self._db_lock:
+            row = (
+                self._conn()
+                .execute(
+                    "SELECT * FROM project_monitoring_prefs WHERE project_path = ?",
+                    (path,),
+                )
+                .fetchone()
+            )
+        if not row:
+            return None
+        return self._row_to_monitoring_prefs(row)
+
+    def list_enabled_monitoring_prefs(self) -> list[MonitoringPrefs]:
+        """Return rows where background monitoring is enabled."""
+        with self._db_lock:
+            rows = (
+                self._conn()
+                .execute(
+                    """
+                    SELECT * FROM project_monitoring_prefs
+                    WHERE enabled = 1
+                    ORDER BY project_path
+                    """
+                )
+                .fetchall()
+            )
+        return [self._row_to_monitoring_prefs(row) for row in rows]
+
+    def touch_monitoring_run(
+        self,
+        project_path: str,
+        *,
+        last_run_at: datetime | None = None,
+        last_error: str | None = None,
+    ) -> None:
+        """Update last_run_at and/or last_error."""
+        path = str(Path(project_path).resolve())
+        if last_run_at is None and last_error is None:
+            return
+        with self._db_lock:
+            row = (
+                self._conn()
+                .execute(
+                    "SELECT 1 FROM project_monitoring_prefs WHERE project_path = ?",
+                    (path,),
+                )
+                .fetchone()
+            )
+            if not row:
+                logger.debug("touch_monitoring_run: no prefs row for %s", path)
+                return
+            assignments: list[str] = []
+            values: list = []
+            if last_run_at is not None:
+                assignments.append("last_run_at = ?")
+                values.append(self._serialize_datetime(last_run_at))
+            if last_error is not None:
+                assignments.append("last_error = ?")
+                values.append(last_error)
+            values.append(path)
+            sql = f"UPDATE project_monitoring_prefs SET {', '.join(assignments)} WHERE project_path = ?"
+            self._conn().execute(sql, values)
+            self._conn().commit()
+        logger.debug("Updated monitoring run metadata for %s", path)
 
 
 __all__ = ["SqliteProjectStore"]

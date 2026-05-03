@@ -1,13 +1,14 @@
 """Tests for OpenOps orchestrator agent."""
 
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from openops.agent.orchestrator import OrchestratorRuntime, create_orchestrator
 from openops.config import OpenOpsConfig
-from openops.models import Project, Service
+from openops.models import MonitoringPrefs, Project, Service
 from openops.storage.base import ProjectStoreBase
 
 
@@ -18,6 +19,7 @@ class MockProjectStore(ProjectStoreBase):
         self._projects: dict[str, Project] = {}
         self._services: dict[str, Service] = {}
         self._deployments = {}
+        self._monitoring: dict[str, MonitoringPrefs] = {}
 
     def upsert_project(self, project: Project) -> None:
         self._projects[project.id] = project
@@ -70,6 +72,39 @@ class MockProjectStore(ProjectStoreBase):
     def get_deployments_for_service(self, service_id: str) -> list:
         return self._deployments.get(service_id, [])
 
+    def upsert_monitoring_prefs(self, prefs: MonitoringPrefs) -> None:
+        path = str(Path(prefs.project_path).resolve())
+        incoming = prefs.model_copy(update={"project_path": path})
+        if existing := self._monitoring.get(path):
+            incoming.last_run_at = existing.last_run_at
+            incoming.last_error = existing.last_error
+        self._monitoring[path] = incoming
+
+    def get_monitoring_prefs(self, project_path: str) -> MonitoringPrefs | None:
+        path = str(Path(project_path).resolve())
+        return self._monitoring.get(path)
+
+    def list_enabled_monitoring_prefs(self) -> list[MonitoringPrefs]:
+        return [p for p in self._monitoring.values() if p.enabled]
+
+    def touch_monitoring_run(
+        self,
+        project_path: str,
+        *,
+        last_run_at=None,
+        last_error: str | None = None,
+    ) -> None:
+        path = str(Path(project_path).resolve())
+        existing = self._monitoring.get(path)
+        if not existing:
+            return
+        kwargs = {}
+        if last_run_at is not None:
+            kwargs["last_run_at"] = last_run_at
+        if last_error is not None:
+            kwargs["last_error"] = last_error
+        self._monitoring[path] = existing.model_copy(update=kwargs)
+
 
 @pytest.fixture
 def mock_store():
@@ -101,7 +136,9 @@ class TestCreateOrchestrator:
         call_kwargs = mock_create_agent.call_args.kwargs
 
         assert call_kwargs["name"] == "openops-orchestrator"
-        assert call_kwargs["model"] == "anthropic:claude-sonnet-4-5"
+        model_value = call_kwargs["model"]
+        model_name = getattr(model_value, "model", model_value)
+        assert model_name == "claude-sonnet-4-5"
         assert "system_prompt" in call_kwargs
         assert len(call_kwargs["tools"]) >= 4
         assert len(call_kwargs["subagents"]) == 3
@@ -119,6 +156,33 @@ class TestCreateOrchestrator:
         assert interrupt_config["vercel_deploy"] is True
         assert interrupt_config["railway_deploy"] is True
         assert interrupt_config["render_deploy"] is True
+        assert interrupt_config["skills_install"] is True
+
+    @patch("openops.agent.orchestrator.create_deep_agent")
+    def test_registers_skill_management_tools(self, mock_create_agent, config, mock_store):
+        mock_agent = MagicMock()
+        mock_create_agent.return_value = mock_agent
+
+        create_orchestrator(config=config, project_store=mock_store)
+
+        call_kwargs = mock_create_agent.call_args.kwargs
+        tool_names = {tool.name for tool in call_kwargs["tools"]}
+
+        assert "skills_search" in tool_names
+        assert "skills_install" in tool_names
+
+    @patch("openops.agent.orchestrator.create_deep_agent")
+    def test_registers_monitoring_tools(self, mock_create_agent, config, mock_store):
+        mock_agent = MagicMock()
+        mock_create_agent.return_value = mock_agent
+
+        create_orchestrator(config=config, project_store=mock_store)
+
+        call_kwargs = mock_create_agent.call_args.kwargs
+        tool_names = {tool.name for tool in call_kwargs["tools"]}
+
+        assert "set_project_monitoring" in tool_names
+        assert "get_project_monitoring" in tool_names
 
     @patch("openops.agent.orchestrator.create_deep_agent")
     def test_custom_skill_directories(self, mock_create_agent, config, mock_store):
@@ -180,6 +244,39 @@ class TestOrchestratorRuntime:
         assert call_args[0][0]["messages"][0]["content"] == "Hello"
         assert call_args[1]["config"]["configurable"]["thread_id"] == "test-thread"
 
+    @patch("openops.agent.orchestrator.build_langfuse_run_config")
+    @patch("openops.agent.orchestrator.create_deep_agent")
+    def test_invoke_adds_langfuse_callback_config(self, mock_create_agent, mock_langfuse_config, config, mock_store):
+        mock_agent = MagicMock()
+        mock_agent.invoke.return_value = {"messages": []}
+        mock_create_agent.return_value = mock_agent
+
+        mock_handler = MagicMock()
+        mock_langfuse_config.return_value = {
+            "callbacks": [mock_handler],
+            "metadata": {"operation": "invoke", "thread_id": "test-thread"},
+            "tags": ["openops", "operation:invoke"],
+            "run_name": "openops.invoke",
+        }
+
+        runtime = OrchestratorRuntime(config=config, project_store=mock_store)
+        _result = runtime.invoke("Hello", thread_id="test-thread")
+
+        call_args = mock_agent.invoke.call_args
+        invoke_config = call_args[1]["config"]
+
+        assert invoke_config["configurable"]["thread_id"] == "test-thread"
+        assert invoke_config["callbacks"] == [mock_handler]
+        assert invoke_config["metadata"]["operation"] == "invoke"
+        assert invoke_config["run_name"] == "openops.invoke"
+
+        mock_langfuse_config.assert_called_once_with(
+            config,
+            operation="invoke",
+            thread_id="test-thread",
+            working_directory=runtime._working_directory,
+        )
+
     @patch("openops.agent.orchestrator.create_deep_agent")
     def test_get_state(self, mock_create_agent, config, mock_store):
         mock_agent = MagicMock()
@@ -240,3 +337,38 @@ class TestOrchestratorRuntime:
         command = call_args[0][0]
         assert command.resume["decisions"][0]["type"] == "reject"
         assert command.resume["decisions"][0]["message"] == "Not ready yet"
+
+    @patch("openops.agent.orchestrator.build_langfuse_run_config")
+    @patch("openops.agent.orchestrator.create_deep_agent")
+    def test_resume_adds_langfuse_callback_config(self, mock_create_agent, mock_langfuse_config, config, mock_store):
+        mock_agent = MagicMock()
+        mock_agent.invoke.return_value = {"messages": []}
+        mock_create_agent.return_value = mock_agent
+
+        mock_handler = MagicMock()
+        mock_langfuse_config.return_value = {
+            "callbacks": [mock_handler],
+            "metadata": {"operation": "resume", "decision": "approve"},
+            "tags": ["openops", "operation:resume"],
+            "run_name": "openops.resume",
+        }
+
+        runtime = OrchestratorRuntime(config=config, project_store=mock_store)
+        runtime.resume(
+            thread_id="test-thread",
+            decision="approve",
+            hitl_action_count=2,
+        )
+
+        invoke_config = mock_agent.invoke.call_args[1]["config"]
+        assert invoke_config["callbacks"] == [mock_handler]
+        assert invoke_config["metadata"]["operation"] == "resume"
+        assert invoke_config["run_name"] == "openops.resume"
+
+        mock_langfuse_config.assert_called_once_with(
+            config,
+            operation="resume",
+            thread_id="test-thread",
+            working_directory=runtime._working_directory,
+            extra_metadata={"decision": "approve", "hitl_action_count": 2},
+        )

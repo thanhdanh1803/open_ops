@@ -4,8 +4,7 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from dotenv import load_dotenv
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -13,12 +12,6 @@ logger = logging.getLogger(__name__)
 # Global OpenOps configuration directory and env file
 OPENOPS_DIR = Path.home() / ".openops"
 OPENOPS_ENV_FILE = OPENOPS_DIR / ".env"
-
-# Load environment variables from the OpenOps env file into os.environ
-# This ensures LLM client libraries (OpenAI, Anthropic, etc.) can find API keys
-if OPENOPS_ENV_FILE.exists():
-    load_dotenv(OPENOPS_ENV_FILE)
-    logger.debug(f"Loaded environment from {OPENOPS_ENV_FILE}")
 
 
 class OpenOpsConfig(BaseSettings):
@@ -32,9 +25,9 @@ class OpenOpsConfig(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="OPENOPS_",
-        env_file=OPENOPS_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     # Model configuration
@@ -43,7 +36,7 @@ class OpenOpsConfig(BaseSettings):
         description="LLM provider to use",
     )
     model_name: str = Field(
-        default="claude-sonnet-4-6",
+        default="claude-sonnet-4-5",
         description="Model name for the selected provider",
     )
     model_temperature: float = Field(
@@ -113,6 +106,40 @@ class OpenOpsConfig(BaseSettings):
         description="Enable debug mode",
     )
 
+    # Tracing (Langfuse)
+    langfuse_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("OPENOPS_LANGFUSE_ENABLED", "LANGFUSE_ENABLED"),
+        description="Enable Langfuse tracing callbacks",
+    )
+    langfuse_public_key: str | None = Field(
+        default=None,
+        validation_alias="LANGFUSE_PUBLIC_KEY",
+        description="Langfuse public key",
+    )
+    langfuse_secret_key: str | None = Field(
+        default=None,
+        validation_alias="LANGFUSE_SECRET_KEY",
+        description="Langfuse secret key",
+    )
+    langfuse_host: str = Field(
+        default="https://cloud.langfuse.com",
+        validation_alias="LANGFUSE_HOST",
+        description="Langfuse host URL",
+    )
+    langfuse_sample_rate: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        validation_alias=AliasChoices("OPENOPS_LANGFUSE_SAMPLE_RATE", "LANGFUSE_SAMPLE_RATE"),
+        description="Sampling rate for Langfuse traces (0.0-1.0)",
+    )
+    langfuse_flush: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("OPENOPS_LANGFUSE_FLUSH", "LANGFUSE_FLUSH"),
+        description="Flush Langfuse events after each run (useful for short-lived CLI runs)",
+    )
+
     # Logging
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
         default="INFO",
@@ -168,7 +195,10 @@ def get_config() -> OpenOpsConfig:
     Returns:
         OpenOpsConfig instance loaded from environment
     """
-    return OpenOpsConfig()
+    # We intentionally scope loading of the ~/.openops/.env file to this helper so
+    # that importing `OpenOpsConfig` (e.g., in tests) does not implicitly depend
+    # on local machine state.
+    return OpenOpsConfig(_env_file=OPENOPS_ENV_FILE if OPENOPS_ENV_FILE.exists() else None)
 
 
 __all__ = ["OpenOpsConfig", "OPENOPS_DIR", "OPENOPS_ENV_FILE", "get_config"]

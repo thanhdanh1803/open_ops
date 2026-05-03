@@ -47,12 +47,22 @@ class TestDeployAgentConfig:
 
         assert config["skills"] == skills
 
+    def test_with_additional_tools(self):
+        def mock_tool(x):
+            return x
+
+        config = create_deploy_agent_config(additional_tools=[mock_tool])
+
+        assert len(config["tools"]) == 1
+        assert config["tools"][0] == mock_tool
+
     def test_interrupt_on_deploy(self):
         config = create_deploy_agent_config(interrupt_on_deploy=True)
 
         assert config["interrupt_on"]["vercel_deploy"] is True
         assert config["interrupt_on"]["railway_deploy"] is True
         assert config["interrupt_on"]["render_deploy"] is True
+        assert config["interrupt_on"]["skills_install"] is True
 
     def test_no_interrupt(self):
         config = create_deploy_agent_config(interrupt_on_deploy=False)
@@ -104,6 +114,16 @@ class TestCreateAllSubagents:
 
         deploy_agent = next(s for s in subagents if s["name"] == "deploy-agent")
         assert deploy_agent.get("skills") == skill_dirs
+
+    def test_deploy_tools(self):
+        def mock_tool(x):
+            return x
+
+        subagents = create_all_subagents(deploy_tools=[mock_tool])
+
+        deploy_agent = next(s for s in subagents if s["name"] == "deploy-agent")
+        assert len(deploy_agent["tools"]) == 1
+        assert deploy_agent["tools"][0] == mock_tool
 
     def test_analyzer_tools(self):
         def mock_tool(x):

@@ -55,8 +55,14 @@ from langgraph.store.memory import InMemoryStore
 
 from openops.agent.llm import create_llm, get_model_string
 from openops.agent.prompts import ORCHESTRATOR_PROMPT
+from openops.agent.skill_tools import create_skill_management_tools
 from openops.agent.subagents import create_all_subagents
-from openops.agent.tools import create_interactive_tools, create_project_knowledge_tools
+from openops.agent.tools import (
+    create_interactive_tools,
+    create_monitoring_tools,
+    create_project_knowledge_tools,
+)
+from openops.agent.tracing import build_langfuse_run_config, flush_langfuse, observe
 from openops.config import OpenOpsConfig
 from openops.credentials.platforms import build_interrupt_config
 from openops.storage.base import ProjectStoreBase
@@ -138,13 +144,16 @@ def create_orchestrator(
             logger.debug(f"Set {env_var} for subagent initialization")
 
     project_tools = create_project_knowledge_tools(project_store)
+    monitoring_tools = create_monitoring_tools(project_store)
     interactive_tools = create_interactive_tools()
-    tools = project_tools + interactive_tools + (additional_tools or [])
+    skill_tools = create_skill_management_tools(skill_directories=skill_directories)
+    tools = project_tools + monitoring_tools + interactive_tools + skill_tools + (additional_tools or [])
     logger.debug(f"Loaded {len(tools)} custom tools")
 
     subagents = create_all_subagents(
         model=model_string,
         skill_directories=skill_directories,
+        deploy_tools=skill_tools,
     )
     logger.debug(f"Configured {len(subagents)} subagents")
 
@@ -160,6 +169,7 @@ def create_orchestrator(
     interrupt_config = build_interrupt_config()
     # Add HITL approval for shell command execution
     interrupt_config["execute"] = True
+    interrupt_config["skills_install"] = True
     logger.debug(f"Interrupt config: {interrupt_config}")
 
     agent = create_deep_agent(
@@ -237,14 +247,26 @@ class OrchestratorRuntime:
         logger.info(f"Invoking orchestrator with thread_id={thread_id}")
         logger.debug(f"Message: {message[:100]}...")
 
-        config = {"configurable": {"thread_id": thread_id}}
+        @observe(name="openops.invoke")
+        def _run() -> dict[str, Any]:
+            config = {"configurable": {"thread_id": thread_id}}
+            config.update(
+                build_langfuse_run_config(
+                    self.config,
+                    operation="invoke",
+                    thread_id=thread_id,
+                    working_directory=self._working_directory,
+                )
+            )
+            try:
+                return self._agent.invoke(
+                    {"messages": [{"role": "user", "content": message}]},
+                    config=config,
+                )
+            finally:
+                flush_langfuse(self.config)
 
-        result = self._agent.invoke(
-            {"messages": [{"role": "user", "content": message}]},
-            config=config,
-        )
-
-        return result
+        return _run()
 
     def get_state(self, thread_id: str) -> Any:
         """Get the current state for a thread.
@@ -292,22 +314,39 @@ class OrchestratorRuntime:
             n,
         )
 
-        config = {"configurable": {"thread_id": thread_id}}
+        @observe(name="openops.resume")
+        def _run() -> dict[str, Any]:
+            config = {"configurable": {"thread_id": thread_id}}
+            config.update(
+                build_langfuse_run_config(
+                    self.config,
+                    operation="resume",
+                    thread_id=thread_id,
+                    working_directory=self._working_directory,
+                    extra_metadata={
+                        "decision": decision,
+                        "hitl_action_count": n,
+                    },
+                )
+            )
 
-        template: dict[str, Any] = {"type": decision}
-        if message:
-            template["message"] = message
-        if edited_action:
-            template["edited_action"] = edited_action
+            template: dict[str, Any] = {"type": decision}
+            if message:
+                template["message"] = message
+            if edited_action:
+                template["edited_action"] = edited_action
 
-        decisions = [dict(template) for _ in range(n)]
+            decisions = [dict(template) for _ in range(n)]
 
-        result = self._agent.invoke(
-            Command(resume={"decisions": decisions}),
-            config=config,
-        )
+            try:
+                return self._agent.invoke(
+                    Command(resume={"decisions": decisions}),
+                    config=config,
+                )
+            finally:
+                flush_langfuse(self.config)
 
-        return result
+        return _run()
 
     @property
     def agent(self) -> Any:

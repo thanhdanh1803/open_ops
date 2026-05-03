@@ -2,13 +2,32 @@
 
 from datetime import datetime
 
+import pytest
+
 from openops.models import (
     Deployment,
+    FindingSeverity,
     MonitoringConfig,
+    MonitoringFinding,
+    MonitoringPrefs,
+    MonitoringReport,
     Project,
     RiskLevel,
     Service,
 )
+
+
+class TestMonitoringPrefs:
+    def test_defaults(self):
+        p = MonitoringPrefs(project_path="/abs/proj")
+        assert p.enabled is False
+        assert p.interval_seconds == 300
+
+    def test_interval_minimum_validation(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            MonitoringPrefs(project_path="/abs/proj", interval_seconds=30)
 
 
 class TestRiskLevel:
@@ -125,3 +144,42 @@ class TestMonitoringConfig:
         assert config.alert_channels == []
         assert config.thresholds == {}
         assert config.enabled is True
+
+
+class TestMonitoringReportModels:
+    def test_finding_creation(self):
+        finding = MonitoringFinding(
+            service_name="api",
+            service_id="svc-1",
+            severity=FindingSeverity.CRITICAL,
+            title="Database connection failures",
+            evidence="psycopg2.OperationalError timeout",
+            root_cause="Primary database unreachable from app network",
+            suggested_fix="Verify DB health and network/security-group rules",
+            related_services=["worker", "cron"],
+        )
+        assert finding.severity == FindingSeverity.CRITICAL
+        assert finding.related_services == ["worker", "cron"]
+
+    def test_report_round_trip(self):
+        report = MonitoringReport(
+            project_path="/tmp/project",
+            project_id="proj-1",
+            generated_at=datetime.now(),
+            overall_status=FindingSeverity.WARNING,
+            summary="Intermittent upstream timeouts observed.",
+            findings=[
+                MonitoringFinding(
+                    service_name="api",
+                    severity=FindingSeverity.WARNING,
+                    title="Timeout spike",
+                    evidence="504 responses increased in last 10m",
+                )
+            ],
+            services_checked=["api", "worker"],
+        )
+        payload = report.model_dump()
+        loaded = MonitoringReport.model_validate(payload)
+        assert loaded.project_path == "/tmp/project"
+        assert loaded.findings[0].title == "Timeout spike"
+        assert loaded.overall_status == FindingSeverity.WARNING

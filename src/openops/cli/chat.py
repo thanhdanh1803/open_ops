@@ -9,13 +9,14 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from rich.console import Console
+from rich.console import Console, Group
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.spinner import Spinner
 from rich.table import Table
+from rich.text import Text
 
 from openops.cli.main import app, show_error
 from openops.cli.runtime import OpenOpsRuntime, create_runtime, get_or_create_thread_id
@@ -85,6 +86,11 @@ def _check_for_interrupt(runtime: OpenOpsRuntime, thread_id: str) -> dict | None
 
 def _display_pending_action(action: dict) -> None:
     """Display a pending action that requires approval."""
+    console.print(_build_pending_action_table(action))
+
+
+def _build_pending_action_table(action: dict) -> Table:
+    """Build a Rich table for a pending action that requires approval."""
     table = Table(title="Pending Action", show_header=True, header_style="bold magenta")
     table.add_column("Field", style="cyan")
     table.add_column("Value", style="green")
@@ -119,7 +125,31 @@ def _display_pending_action(action: dict) -> None:
                 display_value = str(value)
                 table.add_row(f"  {key}", display_value)
 
-    console.print(table)
+    return table
+
+
+def _build_approval_panel() -> Panel:
+    body = Group(
+        Text("The agent wants to perform an action that requires your approval.", style="yellow"),
+        Text("[a]pprove / [r]eject / [e]dit", style="dim"),
+    )
+    return Panel(body, title="Approval Required", border_style="yellow")
+
+
+def _show_approval_bundle(*, assistant_content: str | None, action: dict) -> None:
+    """Render assistant text + approval UI + pending action as one output."""
+    parts: list[object] = []
+    if assistant_content:
+        parts.append(
+            Panel(
+                Markdown(assistant_content),
+                title="[bold blue]OpenOps[/bold blue]",
+                border_style="blue",
+            )
+        )
+    parts.append(_build_approval_panel())
+    parts.append(_build_pending_action_table(action))
+    console.print(Group(*parts))
 
 
 def _hitl_parallel_action_count(action: dict) -> int:
@@ -130,12 +160,18 @@ def _hitl_parallel_action_count(action: dict) -> int:
     return 1
 
 
-def _handle_approval_flow(runtime: OpenOpsRuntime, thread_id: str, action: dict) -> dict | None:
+def _handle_approval_flow(
+    runtime: OpenOpsRuntime,
+    thread_id: str,
+    action: dict,
+    *,
+    assistant_preface: str | None = None,
+) -> dict | None:
     """Handle the human-in-the-loop approval flow.
 
     Returns the result after resume, or None if cancelled.
     """
-    _display_pending_action(action)
+    _show_approval_bundle(assistant_content=assistant_preface, action=action)
     console.print()
 
     decision = Prompt.ask(
@@ -189,7 +225,12 @@ def _show_response(content: str) -> None:
     )
 
 
-def _run_approval_until_idle(runtime: OpenOpsRuntime, thread_id: str) -> None:
+def _run_approval_until_idle(
+    runtime: OpenOpsRuntime,
+    thread_id: str,
+    *,
+    assistant_preface: str | None = None,
+) -> None:
     """Prompt for all pending HITL approvals in sequence for this thread.
 
     After ``resume``, the agent may immediately request another ``execute`` (or
@@ -197,6 +238,7 @@ def _run_approval_until_idle(runtime: OpenOpsRuntime, thread_id: str) -> None:
     to the user prompt while the graph is still paused, which makes assistant
     text look ahead of the next approval step.
     """
+    preface: str | None = assistant_preface
     for round_idx in range(_MAX_CHAINED_TOOL_APPROVALS):
         interrupt = _check_for_interrupt(runtime, thread_id)
         if not interrupt:
@@ -210,16 +252,13 @@ def _run_approval_until_idle(runtime: OpenOpsRuntime, thread_id: str) -> None:
             _MAX_CHAINED_TOOL_APPROVALS,
             thread_id,
         )
-        console.print()
-        console.print(
-            Panel(
-                "[yellow]The agent wants to perform an action that requires your approval.[/yellow]\n"
-                "[dim][a]pprove / [r]eject / [e]dit[/dim]",
-                title="Approval Required",
-                border_style="yellow",
-            )
+        resume_result = _handle_approval_flow(
+            runtime,
+            thread_id,
+            interrupt,
+            assistant_preface=preface,
         )
-        resume_result = _handle_approval_flow(runtime, thread_id, interrupt)
+        preface = None
         if not resume_result:
             logger.debug("Approval flow returned no result; stopping chained approvals")
             return
@@ -275,8 +314,13 @@ def _chat_loop(runtime: OpenOpsRuntime, thread_id: str, project_path: Path) -> N
                     unbind_cli_live()
 
             content = _extract_response_content(result)
-            _show_response(content)
-            _run_approval_until_idle(runtime, thread_id)
+            interrupt = _check_for_interrupt(runtime, thread_id)
+            if interrupt:
+                # Combine assistant response + approval UI into one output.
+                _run_approval_until_idle(runtime, thread_id, assistant_preface=content)
+            else:
+                _show_response(content)
+                _run_approval_until_idle(runtime, thread_id)
 
         except KeyboardInterrupt:
             console.print("\n[dim]Interrupted[/dim]")
