@@ -21,8 +21,8 @@ OpenOps is an open-source project and we welcome contributions! This guide cover
 
 ```bash
 # Clone the repository
-git clone https://github.com/openops/openops.git
-cd openops
+git clone https://github.com/Agentic-OpenOps/open_ops.git
+cd open_ops
 
 # Create virtual environment
 python -m venv .venv
@@ -34,7 +34,7 @@ pip install -e ".[dev]"
 
 # Verify installation
 openops --version
-pytest tests/unit/ -v
+pytest
 ```
 
 ### Development Workflow
@@ -304,7 +304,7 @@ BUILTIN_SKILLS = [
 ### Step 6: Write Tests
 
 ```python
-# tests/unit/test_skills/test_myplatform_skill.py
+# tests/test_myplatform_skill.py
 import pytest
 from unittest.mock import Mock, patch
 from openops.skills.builtin.my_platform import MyPlatformSkill
