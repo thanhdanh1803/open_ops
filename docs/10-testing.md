@@ -37,6 +37,13 @@ Testing an agentic system requires multiple layers:
 
 ## Directory Structure
 
+> **Note:** The layered tree below is the *aspirational* target structure. The
+> current test suite is flat — `test_*.py` files live directly in `tests/`
+> (plus `tests/fixtures/`), with no `unit/`, `integration/`, or `simulation/`
+> subdirectories and no `conftest.py` yet. The example file paths throughout
+> this document (e.g. `tests/unit/test_skills/...`) illustrate that target
+> layout, not the files that exist today.
+
 ```
 tests/
 ├── conftest.py              # Shared fixtures
@@ -522,24 +529,19 @@ openops deploy --platform vercel --dry-run
 
 ```bash
 # Run all tests
-pytest tests/
+pytest
 
-# Run with coverage
-pytest tests/ --cov=openops --cov-report=html
+# Run with coverage (requires pytest-cov)
+pytest --cov=openops --cov-report=html
 
-# Run specific layer
-pytest tests/unit/
-pytest tests/integration/
-pytest tests/simulation/
+# Run a specific test file
+pytest tests/test_config.py
 
-# Run specific test file
-pytest tests/unit/test_skills/test_vercel_skill.py
+# Run a single test by name
+pytest tests/test_config.py -k test_name
 
 # Run with verbose output
-pytest tests/ -v
-
-# Run only fast tests (skip slow integration)
-pytest tests/ -m "not slow"
+pytest -v
 ```
 
 ## Test Configuration
@@ -592,13 +594,8 @@ jobs:
         run: |
           pip install -e ".[dev]"
 
-      - name: Run unit tests
-        run: pytest tests/unit/ -v
-
-      - name: Run integration tests
-        run: pytest tests/integration/ -v
-        env:
-          OPENOPS_TEST_MODE: "true"
+      - name: Run tests
+        run: pytest -v
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
